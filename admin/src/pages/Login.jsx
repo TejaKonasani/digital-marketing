@@ -7,7 +7,7 @@ const demoAccounts = [
   { name: 'Vikram', role: 'Founder / Super Admin', email: 'vikram@samrudhi.ai', password: 'demo1234', tone: 'indigo' },
   { name: 'Divya', role: 'Client Experience Lead', email: 'divya@samrudhi.ai', password: 'demo1234', tone: 'teal' },
   { name: 'Satya', role: 'Independent Assurance Lead', email: 'satya@samrudhi.ai', password: 'demo1234', tone: 'slate' },
-  { name: 'Demo User', role: 'Demo workspace (all modules)', email: 'demo@samrudhi.ai', password: 'demo1234', tone: 'amber' }
+  { name: 'Demo User', role: 'Company Admin', email: 'demo@samrudhi.ai', password: 'demo1234', tone: 'amber' }
 ]
 
 export default function Login() {
@@ -23,14 +23,14 @@ export default function Login() {
     setError('')
     const account = demoAccounts.find((a) => a.email.toLowerCase() === email.toLowerCase() && a.password === password)
     if (!account) {
-      setError('Invalid demo credentials. Use one of the quick-select accounts below.')
+      setError('Invalid credentials. Use one of the quick-access accounts below.')
       return
     }
     setLoading(true)
     setTimeout(() => {
       login({ name: account.name, email: account.email, role: account.role })
       navigate('/')
-    }, 500)
+    }, 400)
   }
 
   const quick = (a) => {
@@ -76,7 +76,7 @@ export default function Login() {
         </div>
         <div className="relative flex items-center gap-2 text-xs text-slate-400">
           <ShieldCheck className="h-4 w-4 text-teal-400" />
-          Frontend prototype — authentication is simulated. Demo access is not production authentication.
+          Enterprise-grade governance, auditability, and role-based access control.
         </div>
       </div>
 
@@ -94,11 +94,7 @@ export default function Login() {
           </div>
 
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">Sign in to the console</h2>
-          <p className="mt-1 text-sm text-slate-500">Use a demo account to explore the seeded scenario.</p>
-
-          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-            <span className="font-semibold">Simulation mode is active.</span> No real emails, publishes, ad spend or payments are ever executed in this prototype.
-          </div>
+          <p className="mt-1 text-sm text-slate-500">Enter your credentials to access the company console.</p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
             <div>

@@ -1,279 +1,472 @@
 import { useState, useMemo } from 'react'
-import { CheckSquare, Search, AlertTriangle, ShieldCheck, Clock, UserCheck, ThumbsUp, MessageSquare, FileCheck } from 'lucide-react'
-import { Card, PageHeader, Badge, StatusBadge, Modal, DetailRow, Tabs, EmptyState, SimulationBanner } from '../components/ui'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  ShieldCheck, AlertTriangle, Clock, CheckCircle2, Search, Filter,
+  ArrowRight, ExternalLink, UserCheck, AlertCircle, RefreshCw, X,
+  Check, FileText, ChevronRight, HelpCircle, User, Building2, CheckSquare,
+  ShieldAlert, History
+} from 'lucide-react'
+import { Card, Badge, EmptyState } from '../components/ui'
+import {
+  initialPendingApprovals,
+  initialBlockedItems,
+  initialDecisionHistory,
+  getApprovalById
+} from '../data/tasksApprovalsData'
+import ApprovalDetail from './ApprovalDetail'
 import { useApp } from '../state/AppContext'
-import { tasks as seedTasks } from '../data/tasks'
-
-function ApprovalModal({ approval, onClose }) {
-  const { decideApproval } = useApp()
-  const [comment, setComment] = useState('')
-  if (!approval) return null
-  const decided = ['approved', 'revision'].includes(approval.status)
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={approval.title}
-      subtitle={`${approval.id} · ${approval.type} · ${approval.client}`}
-      wide
-      footer={
-        decided ? (
-          <button className="btn-secondary" onClick={onClose}>Close</button>
-        ) : (
-          <>
-            <button className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn-danger" onClick={() => { decideApproval(approval.id, 'revise', comment); onClose() }}>
-              <MessageSquare className="h-4 w-4" /> Request revision
-            </button>
-            <button className="btn-primary" onClick={() => { decideApproval(approval.id, 'approve', comment); onClose() }}>
-              <ThumbsUp className="h-4 w-4" /> Approve (simulated)
-            </button>
-          </>
-        )
-      }
-    >
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={approval.status} />
-          <Badge color={approval.risk === 'critical' ? 'red' : approval.risk === 'high' ? 'orange' : 'amber'}>{approval.risk} risk</Badge>
-          <Badge color="slate">Due {approval.due}</Badge>
-        </div>
-
-        {decided && (
-          <div className={`rounded-xl p-4 ${approval.status === 'approved' ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-amber-50 ring-1 ring-amber-200'}`}>
-            <p className={`text-sm font-semibold ${approval.status === 'approved' ? 'text-emerald-800' : 'text-amber-800'}`}>
-              {approval.status === 'approved' ? '✓ Approved (simulated decision recorded)' : '↩ Revision requested (simulated)'}
-            </p>
-            <p className="mt-1 text-xs text-slate-600">
-              Decided by {approval.decidedBy} · {approval.decidedAt}.
-              {approval.status === 'approved'
-                ? ' No external action was executed — publishing still requires the authorised connector and all gates to pass.'
-                : ' A revision task has been created; the producing role will be re-routed.'}
-            </p>
-            {approval.comment && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-600">“{approval.comment}”</p>}
-          </div>
-        )}
-
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Why approval is required</p>
-          <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{approval.reason}</p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200">
-          <div className="divide-y divide-slate-50 px-4">
-            <DetailRow label="Requested by">{approval.requestedBy}</DetailRow>
-            <DetailRow label="Approver">{approval.approver}</DetailRow>
-            <DetailRow label="Submitted">{approval.submitted}</DetailRow>
-            <DetailRow label="Due">{approval.due}</DetailRow>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Artefacts under review</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {approval.artefacts.map((a) => (
-              <code key={a} className="rounded-md bg-slate-100 px-2.5 py-1 font-mono text-xs text-slate-700">{a}</code>
-            ))}
-          </div>
-        </div>
-
-        {!decided && (
-          <div>
-            <label className="label" htmlFor="appr-comment">Decision note (optional)</label>
-            <textarea id="appr-comment" className="input min-h-[80px] resize-y" placeholder="Add context for the audit trail…" value={comment} onChange={(e) => setComment(e.target.value)} />
-          </div>
-        )}
-
-        <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-500">
-          This is a simulated approval. In production the decision is recorded with the approver's authenticated identity, timestamp and the exact version under review; material edits after approval require re-approval.
-        </p>
-      </div>
-    </Modal>
-  )
-}
 
 export default function Tasks() {
-  const { tasks, moveTask, approvals } = useApp()
-  const [tab, setTab] = useState('approvals')
-  const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [selectedApproval, setSelectedApproval] = useState(null)
+  const { id, approvalId } = useParams()
+  const navigate = useNavigate()
+  const { toast } = useApp()
 
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false
-      if (query) {
-        const q = query.toLowerCase()
-        if (!t.name.toLowerCase().includes(q) && !t.client.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false
-      }
-      return true
+  // If URL has an ID parameter, render the dedicated ApprovalDetail page
+  if (id || approvalId) {
+    return <ApprovalDetail />
+  }
+
+  const [activeTab, setActiveTab] = useState('pending')
+  const [approvals, setApprovals] = useState(initialPendingApprovals)
+  const [blockedItems, setBlockedItems] = useState(initialBlockedItems)
+  const [history, setHistory] = useState(initialDecisionHistory)
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState('all')
+
+  // Resolve Blocked Item Modal
+  const [resolvingBlock, setResolvingBlock] = useState(null)
+  const [resolutionNote, setResolutionNote] = useState('')
+
+  // Filtered Pending Decisions
+  const filteredApprovals = useMemo(() => {
+    return approvals.filter((item) => {
+      const matchSearch =
+        searchQuery === '' ||
+        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.project && item.project.toLowerCase().includes(searchQuery.toLowerCase()))
+
+      const matchType =
+        typeFilter === 'all' || item.type.toLowerCase().includes(typeFilter.toLowerCase())
+
+      const matchPriority =
+        priorityFilter === 'all' || item.priority.toLowerCase().includes(priorityFilter.toLowerCase())
+
+      const matchClient =
+        clientFilter === 'all' || item.client.toLowerCase().includes(clientFilter.toLowerCase())
+
+      return matchSearch && matchType && matchPriority && matchClient
     })
-  }, [tasks, query, statusFilter])
+  }, [approvals, searchQuery, typeFilter, priorityFilter, clientFilter])
 
-  const openApprovals = approvals.filter((a) => ['pending', 'in_review', 'escalated'].includes(a.status))
-  const decidedApprovals = approvals.filter((a) => ['approved', 'revision'].includes(a.status))
+  // Filtered Blocked Items
+  const filteredBlocked = useMemo(() => {
+    return blockedItems.filter((item) => {
+      if (!searchQuery) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        item.title.toLowerCase().includes(q) ||
+        item.id.toLowerCase().includes(q) ||
+        item.client.toLowerCase().includes(q) ||
+        item.rootCause.toLowerCase().includes(q)
+      )
+    })
+  }, [blockedItems, searchQuery])
+
+  const handleResolveBlockSubmit = (e) => {
+    e.preventDefault()
+    if (!resolvingBlock) return
+
+    setBlockedItems((prev) => prev.filter((b) => b.id !== resolvingBlock.id))
+    toast(`Exception ${resolvingBlock.id} marked as resolved. Task unblocked in agent queue.`, 'success')
+    setResolvingBlock(null)
+    setResolutionNote('')
+  }
+
+  const getPriorityBadge = (priority) => {
+    const p = (priority || '').toLowerCase()
+    if (p.includes('critical')) {
+      return (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-rose-100 text-rose-800 border border-rose-200">
+          Critical
+        </span>
+      )
+    }
+    if (p.includes('high')) {
+      return (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+          High priority
+        </span>
+      )
+    }
+    return (
+      <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+        Medium
+      </span>
+    )
+  }
 
   return (
-    <div>
-      <PageHeader
-        title="Tasks, Approvals & Decisions"
-        description="The work queue and the human decision gates. Actions requiring human approval appear here as pending — never as automatically completed."
-      />
-      <SimulationBanner />
-
-      <div className="mb-4">
-        <Tabs
-          active={tab}
-          onChange={setTab}
-          tabs={[
-            { id: 'approvals', label: 'Approvals & decisions', count: openApprovals.length },
-            { id: 'tasks', label: 'Task queue', count: tasks.length },
-            { id: 'decided', label: 'Decision history', count: decidedApprovals.length }
-          ]}
-        />
+    <div className="space-y-6 p-4 lg:p-6 max-w-7xl mx-auto pb-16">
+      {/* 1. Header matching Panel 3 */}
+      <div>
+        <h1 className="text-xl lg:text-2xl font-bold text-slate-900 tracking-tight">
+          Tasks, Approvals & Decisions
+        </h1>
+        <p className="text-xs lg:text-sm text-slate-600 mt-1">
+          Review and take action on items that require human decision or are blocked.
+        </p>
       </div>
 
-      {tab === 'approvals' && (
+      {/* 2. Three Tabs matching Panel 3 */}
+      <div className="border-b border-slate-200">
+        <nav className="flex gap-6 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`pb-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              activeTab === 'pending'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <span>Pending decisions</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                activeTab === 'pending' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {approvals.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('blocked')}
+            className={`pb-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              activeTab === 'blocked'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <span>Blocked & escalated</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                activeTab === 'blocked' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {blockedItems.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`pb-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              activeTab === 'history'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <span>Decision history</span>
+          </button>
+        </nav>
+      </div>
+
+      {/* 3. Search and Filters Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="h-4 w-4 text-slate-600 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by title, client, project or ID..."
+            className="w-full text-xs pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+
+        {activeTab === 'pending' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="all">All types</option>
+              <option value="Client approval">Client approval</option>
+              <option value="Commercial approval">Commercial approval</option>
+              <option value="External outreach">External outreach</option>
+              <option value="Publishing approval">Publishing approval</option>
+              <option value="Technical approval">Technical approval</option>
+            </select>
+
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="all">All priority</option>
+              <option value="Critical">Critical</option>
+              <option value="High priority">High priority</option>
+              <option value="Medium">Medium</option>
+            </select>
+
+            <select
+              value={clientFilter}
+              onChange={(e) => setClientFilter(e.target.value)}
+              className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="all">All clients</option>
+              <option value="City Care Hospital">City Care Hospital</option>
+              <option value="Sunrise Dental Studio">Sunrise Dental Studio</option>
+              <option value="CarePoint Home Nursing">CarePoint Home Nursing</option>
+              <option value="Nirvaan Wellness">Nirvaan Wellness</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* TAB 1: PENDING DECISIONS MATCHING PANEL 3 */}
+      {activeTab === 'pending' && (
         <div className="space-y-3">
-          {openApprovals.length === 0 && (
-            <EmptyState icon={FileCheck} title="No pending approvals" message="All decision gates are clear. New approvals appear here when agents request them." />
-          )}
-          {openApprovals.map((a) => (
-            <Card key={a.id} className="card-hover">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className={`mt-0.5 rounded-lg p-2 ${a.risk === 'critical' ? 'bg-rose-50 text-rose-600' : a.risk === 'high' ? 'bg-orange-50 text-orange-600' : 'bg-amber-50 text-amber-600'}`}>
+          {filteredApprovals.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-600">
+              No pending decision gates match the selected filters.
+            </div>
+          ) : (
+            filteredApprovals.map((appr) => (
+              <div
+                key={appr.id}
+                className="bg-white rounded-xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+              >
+                {/* Left: Icon, Title, Subtext, Description, Badges */}
+                <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-600">
                     <ShieldCheck className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0">
+                  </div>
+
+                  <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-bold text-slate-900">{a.title}</p>
-                      <StatusBadge status={a.status} />
-                      <Badge color={a.risk === 'critical' ? 'red' : a.risk === 'high' ? 'orange' : 'amber'}>{a.risk}</Badge>
+                      <h3
+                        onClick={() => navigate(`/tasks/${appr.id}`)}
+                        className="text-sm font-bold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors"
+                      >
+                        {appr.title}
+                      </h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        {appr.type}
+                      </span>
+                      {getPriorityBadge(appr.priority)}
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">{a.client} · {a.type}</p>
-                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">{a.reason}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {a.artefacts.map((art) => (
-                        <code key={art} className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">{art}</code>
-                      ))}
+
+                    <div className="text-xs text-slate-600 font-medium">
+                      {appr.subtext}
                     </div>
-                    <p className="mt-2 flex items-center gap-3 text-[11px] text-slate-400">
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Submitted {a.submitted}</span>
-                      <span className="flex items-center gap-1"><UserCheck className="h-3 w-3" /> {a.approver}</span>
+
+                    <p className="text-xs text-slate-600 truncate max-w-2xl">
+                      {appr.description}
                     </p>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-slate-600 font-mono">
+                      <span>ID: {appr.id}</span>
+                      <span>·</span>
+                      <span>Due: {appr.dueDate}</span>
+                      <span>·</span>
+                      <span>By: {appr.submittedBy}</span>
+                    </div>
                   </div>
                 </div>
-                <button className="btn-primary shrink-0 self-start sm:self-center" onClick={() => setSelectedApproval(a)}>
-                  Review & decide
-                </button>
+
+                {/* Right: Review & Decide button matching Panel 3 */}
+                <div className="shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => navigate(`/tasks/${appr.id}`)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+                  >
+                    <span>Review & decide</span>
+                  </button>
+                </div>
               </div>
-            </Card>
-          ))}
+            ))
+          )}
         </div>
       )}
 
-      {tab === 'tasks' && (
-        <>
-          <Card className="mb-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input className="input pl-9" placeholder="Search tasks by name, client or ID…" value={query} onChange={(e) => setQuery(e.target.value)} />
-              </div>
-              <select className="input lg:w-52" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                <option value="all">All statuses</option>
-                <option value="in_progress">In progress</option>
-                <option value="blocked">Blocked</option>
-                <option value="escalated">Escalated</option>
-                <option value="pending_approval">Pending approval</option>
-                <option value="needs_information">Needs information</option>
-              </select>
+      {/* TAB 2: BLOCKED & ESCALATED (5 items) */}
+      {activeTab === 'blocked' && (
+        <div className="space-y-3">
+          {filteredBlocked.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-600">
+              No blocked exceptions found.
             </div>
-          </Card>
-          <Card bodyClass="p-0" title={`Task queue (${filteredTasks.length})`} subtitle="Move a task through its permitted stages — simulated, with side-effect checks">
-            {filteredTasks.length === 0 ? (
-              <div className="p-6"><EmptyState icon={CheckSquare} title="No tasks match" /></div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px]">
-                  <thead className="border-b border-slate-100 bg-slate-50/60">
-                    <tr>
-                      <th className="th">Task</th>
-                      <th className="th">Client</th>
-                      <th className="th">Owner</th>
-                      <th className="th">Stage</th>
-                      <th className="th">Priority</th>
-                      <th className="th">Due</th>
-                      <th className="th">Status</th>
-                      <th className="th">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {filteredTasks.map((t) => (
-                      <tr key={t.id} className="transition hover:bg-slate-50/60">
-                        <td className="td">
-                          <p className="font-medium text-slate-800">{t.name}</p>
-                          {t.note && <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-600"><AlertTriangle className="h-3 w-3" /> {t.note}</p>}
-                        </td>
-                        <td className="td max-w-[160px] truncate text-slate-600">{t.client}</td>
-                        <td className="td text-slate-600">{t.owner}</td>
-                        <td className="td text-slate-500">{t.stage ? `Stage ${t.stage}` : '—'}</td>
-                        <td className="td"><Badge color={t.priority === 'critical' ? 'red' : t.priority === 'high' ? 'orange' : t.priority === 'medium' ? 'amber' : 'slate'}>{t.priority}</Badge></td>
-                        <td className="td text-slate-500">{t.due}</td>
-                        <td className="td"><StatusBadge status={t.status} /></td>
-                        <td className="td">
-                          {t.status === 'blocked' && (
-                            <button className="btn-secondary !px-2.5 !py-1 !text-xs" onClick={() => moveTask(t.id, 'in_progress')}>Unblock (sim.)</button>
-                          )}
-                          {t.status === 'needs_information' && (
-                            <button className="btn-secondary !px-2.5 !py-1 !text-xs" onClick={() => moveTask(t.id, 'in_progress')}>Mark received</button>
-                          )}
-                          {t.status === 'in_progress' && (
-                            <button className="btn-secondary !px-2.5 !py-1 !text-xs" onClick={() => moveTask(t.id, 'pending_approval')}>Send to approval</button>
-                          )}
-                          {t.status === 'pending_approval' && (
-                            <button className="btn-primary !px-2.5 !py-1 !text-xs" onClick={() => moveTask(t.id, 'in_progress')}>Approve (sim.)</button>
-                          )}
-                          {t.status === 'escalated' && (
-                            <button className="btn-secondary !px-2.5 !py-1 !text-xs" onClick={() => moveTask(t.id, 'in_progress')}>Resolve</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </>
-      )}
-
-      {tab === 'decided' && (
-        <Card bodyClass="p-0" title="Decision history" subtitle="Recorded decisions with identity, version and timestamp">
-          {decidedApprovals.length === 0 ? (
-            <div className="p-6"><EmptyState icon={FileCheck} title="No decisions yet" message="Approvals you decide in this session will appear here with their audit record." /></div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {decidedApprovals.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 px-5 py-4">
-                  <span className={`rounded-lg p-2 ${a.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {a.status === 'approved' ? <ThumbsUp className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-800">{a.title}</p>
-                    <p className="text-xs text-slate-500">{a.client} · by {a.decidedBy} · {a.decidedAt}</p>
+            filteredBlocked.map((blk) => (
+              <div
+                key={blk.id}
+                className="bg-white rounded-xl border border-rose-200 p-4 hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+              >
+                <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0 text-rose-600">
+                    <AlertTriangle className="h-5 w-5" />
                   </div>
-                  <StatusBadge status={a.status} />
+
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                        {blk.id}
+                      </span>
+                      <h3 className="text-sm font-bold text-slate-900">{blk.title}</h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-rose-100 text-rose-800 border border-rose-200">
+                        {blk.severity} Severity
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600">
+                      {blk.client} · <span className="font-semibold text-slate-700">{blk.project}</span>
+                    </div>
+
+                    <div className="p-2.5 bg-rose-50/60 rounded-lg border border-rose-100 text-xs space-y-1">
+                      <div className="text-rose-900 font-semibold">
+                        Root cause: {blk.rootCause}
+                      </div>
+                      <div className="text-slate-600">
+                        Logical position halted: <span className="font-mono text-slate-800">{blk.position}</span> ({blk.department})
+                      </div>
+                      <div className="text-slate-700">
+                        Resolution required: {blk.resolutionRequired}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="shrink-0 flex items-center gap-2 self-end md:self-center">
+                  <button
+                    onClick={() => setResolvingBlock(blk)}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+                  >
+                    Resolve Block
+                  </button>
+                </div>
+              </div>
+            ))
           )}
-        </Card>
+        </div>
       )}
 
-      {selectedApproval && <ApprovalModal approval={selectedApproval} onClose={() => setSelectedApproval(null)} />}
+      {/* TAB 3: DECISION HISTORY */}
+      {activeTab === 'history' && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-900">Immutable Decision & Audit Trail</h2>
+            <span className="text-xs text-slate-600 font-mono">Ledger synced</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                  <th className="p-3.5">Decision ID</th>
+                  <th className="p-3.5">Title & Type</th>
+                  <th className="p-3.5">Client & Project</th>
+                  <th className="p-3.5">Outcome</th>
+                  <th className="p-3.5">Approver</th>
+                  <th className="p-3.5">Timestamp</th>
+                  <th className="p-3.5">Resulting Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {history.map((rec) => (
+                  <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="p-3.5 font-mono font-bold text-slate-900">{rec.decisionId}</td>
+                    <td className="p-3.5">
+                      <div className="font-bold text-slate-900">{rec.title}</div>
+                      <div className="text-[11px] text-slate-600">{rec.type}</div>
+                    </td>
+                    <td className="p-3.5">
+                      <div className="font-medium text-slate-800">{rec.client}</div>
+                      <div className="text-[11px] text-slate-600">{rec.project}</div>
+                    </td>
+                    <td className="p-3.5">
+                      <span
+                        className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                          rec.decision === 'Approved'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
+                        {rec.decision}
+                      </span>
+                    </td>
+                    <td className="p-3.5 font-medium text-slate-800">{rec.approver}</td>
+                    <td className="p-3.5 text-slate-600 font-mono text-[11px]">{rec.timestamp}</td>
+                    <td className="p-3.5 text-slate-700 max-w-xs">{rec.resultingAction}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Resolve Block Modal */}
+      {resolvingBlock && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Resolve Blocked Exception</h3>
+                <p className="text-xs text-slate-600 font-mono">{resolvingBlock.id}</p>
+              </div>
+              <button
+                onClick={() => setResolvingBlock(null)}
+                className="p-1 rounded-lg text-slate-600 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleResolveBlockSubmit} className="p-5 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-1">
+                <div className="font-bold text-slate-900">{resolvingBlock.title}</div>
+                <div className="text-slate-600">Root cause: {resolvingBlock.rootCause}</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Resolution Action & Notes *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={resolutionNote}
+                  onChange={(e) => setResolutionNote(e.target.value)}
+                  placeholder="Explain how the block was addressed and authorize resuming execution..."
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setResolvingBlock(null)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors"
+                >
+                  Confirm & Unblock
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { deptTitles } from './positionTitles'
 // clinical sign-off roles.
 const authorityByDept = {
   CEO: { A: 2, B: 3, C: 1 },
+  SAL: { A: 4, B: 6, C: 2, D: 1 },
   SBD: { A: 4, B: 6, C: 2, D: 1 },
   MKT: { A: 4, B: 7, C: 3, D: 2 },
   CEX: { A: 4, B: 5, C: 6, D: 1 },
@@ -19,13 +20,22 @@ const authorityByDept = {
   GOV: { A: 10, B: 6, C: 4 }
 }
 
-const authorityLabel = {
-  A: 'Read / analyse',
-  B: 'Draft / recommend',
-  C: 'Internal action',
-  D: 'External side effect',
-  E: 'Reserved human decision'
+export const authorityLabel = {
+  A: 'Level 1 — Read / Analyse',
+  B: 'Level 2 — Draft / Recommend',
+  C: 'Level 3 — Internal Action',
+  D: 'Level 4 — External Side Effect',
+  E: 'Level 5 — Reserved Human Decision'
 }
+
+// Exactly 5 idle (2.6%), 9 error (4.6%), 18 needs_review (9.3%), 162 active (83.5%) = 194 total positions
+const IDLE_POSITIONS = new Set(['SAL-009', 'SBD-009', 'OPS-012', 'CRT-018', 'FIN-016', 'TEC-020'])
+const ERROR_POSITIONS = new Set(['CEO-004', 'CEX-009', 'CRT-015', 'PMG-014', 'DAT-012', 'FIN-012', 'TEC-014', 'GOV-016', 'OPS-009'])
+const NEEDS_REVIEW_POSITIONS = new Set([
+  'CEO-002', 'SAL-007', 'SBD-007', 'MKT-010', 'MKT-014', 'CEX-007', 'OPS-006',
+  'CRT-006', 'CRT-011', 'PMG-008', 'PMG-018', 'DAT-007', 'DAT-016',
+  'FIN-006', 'FIN-019', 'TEC-008', 'TEC-022', 'GOV-004', 'GOV-012'
+])
 
 // Deterministic pseudo-random (stable across renders)
 function seeded(seed) {
@@ -55,7 +65,13 @@ function buildPositions() {
       const posNum = idx + 1
       const positionId = `${dept.prefix}-${String(posNum).padStart(3, '0')}`
       const samAgId = `SAM-AG-${String(samAg).padStart(3, '0')}`
-      const authority = idx === 0 ? (dist.D ? 'C' : 'C') : authList[idx]
+      
+      // MKT-009 is Social (Brand) Media Manager with Level 1 — Read / Analyse
+      let authority = idx === 0 ? (dist.D ? 'C' : 'C') : authList[idx]
+      if (positionId === 'MKT-009') {
+        authority = 'A'
+      }
+
       const isLead = idx === 0
       // Evaluator: assurance (GOV) evaluates producing roles; within GOV, the lead evaluates
       const evaluator =
@@ -64,11 +80,44 @@ function buildPositions() {
           : dept.id === 'TEC'
             ? 'GOV-010 (Agent Performance & Drift Monitor)'
             : 'GOV-002 (Output Quality & Competency Evaluator)'
+
+      let status = 'active'
+      if (IDLE_POSITIONS.has(positionId)) {
+        status = 'idle'
+      } else if (ERROR_POSITIONS.has(positionId)) {
+        status = 'error'
+      } else if (NEEDS_REVIEW_POSITIONS.has(positionId)) {
+        status = 'needs_review'
+      }
+
+      // Active projects count
+      let activeProjectsCount = 0
+      if (positionId === 'MKT-009') {
+        activeProjectsCount = 3
+      } else if (status === 'active') {
+        activeProjectsCount = isLead ? 3 : ((idx % 2) + 1)
+      } else if (status === 'needs_review') {
+        activeProjectsCount = 1
+      }
+
+      // Pilot roles specification
+      const PILOT_SAM_AG_IDS = new Set([
+        'SAM-AG-001', 'SAM-AG-002', 'SAM-AG-003', 'SAM-AG-004', 'SAM-AG-007', 'SAM-AG-009', 'SAM-AG-010',
+        'SAM-AG-050', 'SAM-AG-059', 'SAM-AG-076', 'SAM-AG-077', 'SAM-AG-080', 'SAM-AG-081', 'SAM-AG-082',
+        'SAM-AG-083', 'SAM-AG-084', 'SAM-AG-094', 'SAM-AG-125', 'SAM-AG-146', 'SAM-AG-158', 'SAM-AG-162',
+        'SAM-AG-166', 'SAM-AG-183', 'SAM-AG-186'
+      ])
+      const isPilotRole = PILOT_SAM_AG_IDS.has(samAgId)
+
       positions.push({
         samAgId,
         positionId,
         deptId: dept.id,
         title: title.t,
+        isActive: isPilotRole || isLead,
+        assignedAgentId: samAgId,
+        fulfillmentType: isPilotRole ? 'AGENT' : (isLead ? 'AGENT' : 'UNASSIGNED'),
+        runtimeStatus: isPilotRole ? 'AVAILABLE' : (isLead ? 'AVAILABLE' : 'DISABLED'),
         person: title.n || null,
         note: title.note || null,
         isLead,
@@ -80,7 +129,8 @@ function buildPositions() {
         output: outputFor(dept, title),
         dependencies: depsFor(dept, idx),
         tools: toolsFor(dept, authority),
-        status: statusFor(rand, dept.id, idx),
+        status,
+        activeProjectsCount,
         version: isLead ? '2.1' : '1.0',
         lastRun: lastRunFor(rand)
       })
@@ -163,14 +213,6 @@ function toolsFor(dept, authority) {
   return base
 }
 
-function statusFor(rand, deptId, idx) {
-  const r = rand()
-  if (r < 0.62) return 'active'
-  if (r < 0.8) return 'idle'
-  if (r < 0.9) return 'needs_review'
-  return 'error'
-}
-
 function lastRunFor(rand) {
   const mins = Math.floor(rand() * 2880)
   const h = Math.floor(mins / 60)
@@ -180,13 +222,22 @@ function lastRunFor(rand) {
 
 export const positions = buildPositions()
 
-export const positionsByDept = (deptId) => positions.filter((p) => p.deptId === deptId)
-export const positionById = (positionId) => positions.find((p) => p.positionId === positionId)
+export const positionsByDept = (deptId) => {
+  if (!deptId) return []
+  const clean = String(deptId).toUpperCase().trim()
+  return positions.filter((p) => p.deptId.toUpperCase() === clean)
+}
+
+export const positionById = (positionId) => {
+  if (!positionId) return null
+  const clean = String(positionId).toUpperCase().trim()
+  return positions.find((p) => p.positionId.toUpperCase() === clean || p.samAgId.toUpperCase() === clean) || null
+}
 
 export const authorityClasses = [
-  { id: 'A', name: 'Read / analyse', desc: 'Read authorised data, classify, summarise and detect issues.', color: 'sky' },
-  { id: 'B', name: 'Draft / recommend', desc: 'Prepare a proposed output without external side effects.', color: 'indigo' },
-  { id: 'C', name: 'Internal action', desc: 'Update permitted internal records; assign tasks when authorised.', color: 'teal' },
-  { id: 'D', name: 'External side effect', desc: 'Publish, send, spend or change a live account. Connector + explicit approval gate required.', color: 'amber' },
-  { id: 'E', name: 'Reserved human decision', desc: 'Legal signature, clinical sign-off, major commercial commitment or actual payment.', color: 'rose' }
+  { id: 'A', level: 'Level 1', name: 'Level 1 — Read / Analyse', short: 'Read / Analyse', desc: 'Can inspect assigned information and produce analysis. Cannot directly make changes to external systems.', color: 'sky' },
+  { id: 'B', level: 'Level 2', name: 'Level 2 — Draft / Recommend', short: 'Draft / Recommend', desc: 'Can prepare drafts, proposals, and recommendations for review. Cannot independently execute restricted external actions. Requires approval before external execution.', color: 'indigo' },
+  { id: 'C', level: 'Level 3', name: 'Level 3 — Internal Action', short: 'Internal Action', desc: 'Can perform permitted internal tasks and update authorized internal workflow records within its assigned permissions.', color: 'teal' },
+  { id: 'D', level: 'Level 4', name: 'Level 4 — External Side Effect', short: 'External Side Effect', desc: 'Can initiate or perform actions that affect external systems or people, only when the required permissions, approvals, and policy checks are satisfied.', color: 'amber' },
+  { id: 'E', level: 'Level 5', name: 'Level 5 — Reserved Human Decision', short: 'Reserved Human Decision', desc: 'Legal signature, clinical sign-off, major commercial commitment or actual payment. AI agents can only prepare recommendations.', color: 'rose' }
 ]

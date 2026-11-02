@@ -1,0 +1,13 @@
+{
+  "name": "@samrudhi/shared",
+  "version": "1.0.0",
+  "description": "Canonical TypeScript contracts, DTOs, Enums, and Interfaces for Samrudhi Agentic AI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

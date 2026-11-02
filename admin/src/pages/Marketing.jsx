@@ -1,212 +1,778 @@
-import { useState } from 'react'
-import { Megaphone, PenTool, Image, Search as SearchIcon, MousePointerClick, CalendarDays, Eye, ThumbsUp, MessageSquare } from 'lucide-react'
-import { Card, PageHeader, Badge, StatusBadge, KpiCard, Tabs, ProgressBar, SimulationBanner } from '../components/ui'
-import { analytics } from '../data/finance'
-
-const contentItems = [
-  { id: 'CR-001', title: 'Cardiac Awareness Week — social post', client: 'City Care', type: 'Social', channel: 'Instagram / Facebook', version: 'v2', status: 'qa', owner: 'Lekha / Chitra', due: '2026-10-30', progress: 85 },
-  { id: 'CR-002', title: 'Diabetes care — SEO landing page', client: 'City Care', type: 'Web / SEO', channel: 'Website', version: 'v2', status: 'in_production', owner: 'SEO Writer / PMG', due: '2026-11-04', progress: 45 },
-  { id: 'CR-003', title: 'Patient Education Video — Ep.2', client: 'Nirvaan', type: 'Video', channel: 'YouTube', version: 'v1', status: 'in_production', owner: 'Video Producer', due: '2026-11-08', progress: 50 },
-  { id: 'CR-004', title: 'Diwali Health Tips — content pack', client: 'City Care', type: 'Social pack', channel: 'Multi', version: 'v1', status: 'blocked', owner: 'CRT / GOV', due: '2026-10-31', progress: 58, flag: '2 clinical claims in GOV review' },
-  { id: 'CR-005', title: 'Physiotherapy booking — ad set', client: 'Nirvaan', type: 'Paid ads', channel: 'Meta / Google', version: 'v3', status: 'approved', owner: 'Ad Copy / PMG', due: '2026-10-29', progress: 100 },
-  { id: 'CR-006', title: 'Panchakarma season — content pack', client: 'Arogya', type: 'Content', channel: 'Blog / Social', version: 'v1', status: 'draft', owner: 'Lekha', due: '2026-11-10', progress: 20 }
-]
-
-const campaigns = [
-  { id: 'CP-0031', name: 'Maternity Services Launch', client: 'City Care', channel: 'Google Ads', status: 'approval', budget: 120000, spend: 0, cpc: 0, cpa: 0, note: 'Awaiting budget cap approval (Class E)' },
-  { id: 'CP-0028', name: 'Physiotherapy Bookings', client: 'Nirvaan', channel: 'Meta Ads', status: 'active', budget: 80000, spend: 54200, cpc: 0.36, cpa: 42, note: 'Live — simulation mode for spend' },
-  { id: 'CP-0025', name: 'Corporate Health Check', client: 'MediScan', channel: 'Google Ads', status: 'paused', budget: 60000, spend: 60000, cpc: 1.18, cpa: 88, note: 'Paused — budget exhausted' },
-  { id: 'CP-0022', name: 'Local SEO — Map Listings', client: 'Sunrise', channel: 'Local SEO', status: 'active', budget: 25000, spend: 9800, cpc: 0, cpa: 0, note: 'Optimising Google Business Profile' }
-]
-
-const seoItems = [
-  { page: '/diabetes-care', client: 'City Care', kw: 'diabetes care hyderabad', pos: 4, prev: 7, traffic: 4200, status: 'improving' },
-  { page: '/cardiac-awareness', client: 'City Care', kw: 'heart health awareness', pos: 9, prev: 12, traffic: 2800, status: 'improving' },
-  { page: '/physiotherapy', client: 'Nirvaan', kw: 'physiotherapy near me', pos: 3, prev: 3, traffic: 5100, status: 'stable' },
-  { page: '/panchakarma', client: 'Arogya', kw: 'panchakarma chennai', pos: 14, prev: 11, traffic: 900, status: 'declining' },
-  { page: '/dental-implants', client: 'Sunrise', kw: 'dental implants pune', pos: 22, prev: 25, traffic: 400, status: 'improving' }
-]
+import { useState, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  Layers, Clock, UserCheck, CheckCircle2, AlertTriangle, Plus, Search,
+  Filter, ArrowRight, ExternalLink, Image, Video, FileText, Package, Megaphone,
+  Sparkles, Check, ChevronRight, TrendingUp, TrendingDown, Minus, RefreshCw,
+  X, CheckSquare, Eye, ShieldAlert, BarChart3
+} from 'lucide-react'
+import { Card, Badge, ProgressBar } from '../components/ui'
+import {
+  initialContentItems,
+  initialCampaigns,
+  initialSeoItems
+} from '../data/marketingContentData'
+import ContentItemDetail from './ContentItemDetail'
+import { useApp } from '../state/AppContext'
 
 export default function Marketing() {
-  const [tab, setTab] = useState('content')
+  const { id, contentId } = useParams()
+  const navigate = useNavigate()
+  const { toast } = useApp()
+
+  // If URL has an ID parameter, show the detail page
+  if (id || contentId) {
+    return <ContentItemDetail />
+  }
+
+  const [activeTab, setActiveTab] = useState('production')
+  const [items, setItems] = useState(initialContentItems)
+  const [campaigns, setCampaigns] = useState(initialCampaigns)
+  const [seoItems, setSeoItems] = useState(initialSeoItems)
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('')
+  const [clientFilter, setClientFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+
+  // Create Modal
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    title: '',
+    client: 'City Care Hospital',
+    type: 'Social Media',
+    due: '15 Nov 2026',
+    owner: 'K. Sharma',
+    objective: ''
+  })
+
+  // Filtered Content Items
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const matchSearch =
+        searchQuery === '' ||
+        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.client.toLowerCase().includes(searchQuery.toLowerCase())
+
+      const matchClient =
+        clientFilter === 'all' || item.client.toLowerCase().includes(clientFilter.toLowerCase())
+
+      const matchType =
+        typeFilter === 'all' || item.type.toLowerCase().includes(typeFilter.toLowerCase())
+
+      const matchStatus =
+        statusFilter === 'all' || item.status.toLowerCase().includes(statusFilter.toLowerCase())
+
+      return matchSearch && matchClient && matchType && matchStatus
+    })
+  }, [items, searchQuery, clientFilter, typeFilter, statusFilter])
+
+  const handleCreateSubmit = (e) => {
+    e.preventDefault()
+    if (!createForm.title.trim()) {
+      toast('Please enter a content deliverable title.', 'warning')
+      return
+    }
+
+    const nextId = `CNT-00${items.length + 1}`
+    const newItem = {
+      id: nextId,
+      title: createForm.title,
+      client: createForm.client,
+      clientId: 'CLIENT-001',
+      project: 'Brand & Content Operations',
+      type: createForm.type,
+      contentTypeBadge: createForm.type,
+      version: 'v1',
+      progress: 15,
+      status: 'In Production',
+      statusColor: 'blue',
+      due: createForm.due,
+      owner: createForm.owner,
+      ownerInitials: createForm.owner.split(' ').map((n) => n[0]).join('').substring(0, 2),
+      ownerDept: 'Creative & Content (CRT)',
+      assignedPosition: 'CRT-004 (Content Specialist)',
+      qaStatus: 'Drafting initiated',
+      clientApprovalStatus: 'Not submitted yet',
+      publishingStatus: 'In production',
+      brief: {
+        objective: createForm.objective || 'Deliver approved content assets for client campaign.',
+        targetAudience: 'Target patient & community demographic.',
+        keyMessage: createForm.title,
+        format: 'Approved client format specification',
+        brandGuidelines: 'Client Brand Identity v2.0',
+        createdDate: 'Today by Marketing Lead'
+      },
+      currentVersion: {
+        version: 'v1',
+        label: 'v1 - Initial Draft',
+        createdDate: 'Today',
+        headline: createForm.title,
+        bodyText: createForm.objective || 'Drafting in progress under creative guidelines.',
+        assetName: 'draft_spec_v1.pdf',
+        assetSize: '240 KB'
+      },
+      reviewStatus: [
+        { name: 'Draft created', date: 'Today', status: 'approved', reviewer: 'Creative Team' },
+        { name: 'Creative review', date: 'Pending', status: 'in_review', reviewer: 'Creative Lead' },
+        { name: 'Brand review', date: 'Pending', status: 'pending', reviewer: 'Brand Specialist' },
+        { name: 'QA review', date: 'Pending', status: 'pending', reviewer: 'Content QA' },
+        { name: 'Client approval', date: 'Pending', status: 'pending', reviewer: 'Client Admin' },
+        { name: 'Publishing', date: 'Pending', status: 'pending', reviewer: 'Channel Publisher' }
+      ]
+    }
+
+    setItems([newItem, ...items])
+    setCreateModalOpen(false)
+    setCreateForm({
+      title: '',
+      client: 'City Care Hospital',
+      type: 'Social Media',
+      due: '15 Nov 2026',
+      owner: 'K. Sharma',
+      objective: ''
+    })
+    toast(`Content deliverable ${nextId} created successfully.`, 'success')
+  }
+
+  const getTypeIcon = (type) => {
+    const t = (type || '').toLowerCase()
+    if (t.includes('video')) return <Video className="h-4 w-4 text-rose-600" />
+    if (t.includes('blog') || t.includes('article')) return <FileText className="h-4 w-4 text-emerald-600" />
+    if (t.includes('pack')) return <Package className="h-4 w-4 text-purple-600" />
+    if (t.includes('ad')) return <Megaphone className="h-4 w-4 text-indigo-600" />
+    return <Image className="h-4 w-4 text-blue-600" />
+  }
+
+  const getTypeBg = (type) => {
+    const t = (type || '').toLowerCase()
+    if (t.includes('video')) return 'bg-rose-50 border-rose-200'
+    if (t.includes('blog') || t.includes('article')) return 'bg-emerald-50 border-emerald-200'
+    if (t.includes('pack')) return 'bg-purple-50 border-purple-200'
+    if (t.includes('ad')) return 'bg-indigo-50 border-indigo-200'
+    return 'bg-blue-50 border-blue-200'
+  }
+
+  const getStatusBadge = (status) => {
+    const s = (status || '').toLowerCase()
+    if (s.includes('blocked')) {
+      return (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" /> Blocked
+        </span>
+      )
+    }
+    if (s.includes('client review') || s.includes('client')) {
+      return (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-teal-50 text-teal-700 border border-teal-200 inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" /> Client Review
+        </span>
+      )
+    }
+    if (s.includes('in review') || s.includes('review')) {
+      return (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" /> In Review
+        </span>
+      )
+    }
+    if (s.includes('ready') || s.includes('approved')) {
+      return (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+          <CheckCircle2 className="h-3 w-3" /> {status}
+        </span>
+      )
+    }
+    return (
+      <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
+        <Sparkles className="h-3 w-3" /> In Production
+      </span>
+    )
+  }
+
   return (
-    <div>
-      <PageHeader
-        title="Marketing & Content"
-        description="MKT builds Samrudhi itself; PMG delivers paid media, SEO and growth for clients. CRT produces healthcare content, copy, visuals and video, then coordinates quality and publishing."
-      />
-      <SimulationBanner />
-
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Content in pipeline" value={contentItems.length} icon={PenTool} tone="rose" hint="Across 5 clients" />
-        <KpiCard label="Active campaigns" value={campaigns.filter((c) => c.status === 'active').length} icon={Megaphone} tone="orange" hint={`${campaigns.filter((c) => c.status === 'approval').length} awaiting approval`} />
-        {(() => {
-          const ch = analytics.channelPerformance
-          return <KpiCard label="Total impressions (30d)" value={`${Math.round(ch.reduce((s, c) => s + c.impressions, 0) / 1000000 * 10) / 10}M`} icon={Eye} tone="violet" hint="Authorised data only" />
-        })()}
-        <KpiCard label="Organic clicks (30d)" value="18.9k" icon={SearchIcon} tone="teal" delta={9.4} deltaLabel="MoM" hint="SEO / local" />
+    <div className="space-y-6 p-4 lg:p-6 max-w-7xl mx-auto pb-16">
+      {/* 1. Header matching Panel 2 */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl lg:text-2xl font-bold text-slate-900 tracking-tight">Marketing & Content</h1>
+          <p className="text-xs lg:text-sm text-slate-600 mt-1">
+            Plan, produce and track marketing content, campaigns and growth activities.
+          </p>
+        </div>
+        <button
+          onClick={() => setCreateModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors self-start sm:self-auto"
+        >
+          <Plus className="h-4 w-4" /> Create Content
+        </button>
       </div>
 
-      <div className="mb-4">
-        <Tabs
-          active={tab}
-          onChange={setTab}
-          tabs={[
-            { id: 'content', label: 'Content production' },
-            { id: 'creative', label: 'Creative review' },
-            { id: 'campaigns', label: 'Paid campaigns' },
-            { id: 'seo', label: 'SEO & growth' }
-          ]}
-        />
-      </div>
-
-      {tab === 'content' && (
-        <Card title="Content production board" subtitle="Versioned drafts and assets with metadata" bodyClass="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px]">
-              <thead className="border-b border-slate-100 bg-slate-50/60">
-                <tr>
-                  <th className="th">Item</th>
-                  <th className="th">Client</th>
-                  <th className="th">Type</th>
-                  <th className="th">Version</th>
-                  <th className="th">Progress</th>
-                  <th className="th">Status</th>
-                  <th className="th">Due</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {contentItems.map((c) => (
-                  <tr key={c.id} className="transition hover:bg-slate-50/60">
-                    <td className="td">
-                      <p className="font-medium text-slate-800">{c.title}</p>
-                      {c.flag && <p className="mt-0.5 text-xs text-amber-600">{c.flag}</p>}
-                    </td>
-                    <td className="td text-slate-600">{c.client}</td>
-                    <td className="td"><Badge color="slate">{c.type}</Badge></td>
-                    <td className="td font-mono text-xs text-slate-500">{c.version}</td>
-                    <td className="td w-32">
-                      <div className="flex items-center gap-2">
-                        <ProgressBar value={c.progress} className="h-1.5 flex-1" color={c.status === 'blocked' ? 'bg-rose-500' : c.status === 'approved' ? 'bg-emerald-500' : 'bg-indigo-500'} />
-                        <span className="text-xs text-slate-500">{c.progress}%</span>
-                      </div>
-                    </td>
-                    <td className="td"><StatusBadge status={c.status} /></td>
-                    <td className="td text-slate-500">{c.due}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* 2. Top Metric Cards matching Panel 2 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+        {/* Card 1: Content in Production (42) */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-600">Content in Production</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+              <Layers className="h-4 w-4" />
+            </div>
           </div>
-        </Card>
-      )}
+          <div className="text-2xl font-bold text-slate-900 tracking-tight">42</div>
+        </div>
 
-      {tab === 'creative' && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {contentItems.filter((c) => ['qa', 'blocked', 'approved'].includes(c.status)).map((c) => (
-            <Card key={c.id} title={c.title} subtitle={`${c.client} · ${c.version} · ${c.channel}`}
-              actions={<StatusBadge status={c.status} />}>
-              <div className="flex gap-4">
-                <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-100 to-teal-100 ring-1 ring-slate-200">
-                  <Image className="h-8 w-8 text-indigo-400" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Review notes</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                    {c.status === 'qa' && 'QA screening clinical claims, brand consistency, alt text and platform dimensions. Technical checks passed; claims screen in progress.'}
-                    {c.status === 'blocked' && 'Blocked: 2 clinical claims escalated to GOV for independent review. Publishing is gated until sign-off.'}
-                    {c.status === 'approved' && 'Client approved this exact version. Ready for authorised publishing (simulation mode).'}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button className="btn-secondary !py-1.5 !text-xs"><ThumbsUp className="h-3.5 w-3.5" /> Approve</button>
-                    <button className="btn-secondary !py-1.5 !text-xs"><MessageSquare className="h-3.5 w-3.5" /> Request changes</button>
-                    <button className="btn-ghost !py-1.5 !text-xs"><Eye className="h-3.5 w-3.5" /> View full preview</button>
+        {/* Card 2: Awaiting Review (8) */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-600">Awaiting Review</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+              <Clock className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 tracking-tight">8</div>
+        </div>
+
+        {/* Card 3: Awaiting Client Approval (6) */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-600">Awaiting Client Approval</span>
+            <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600">
+              <UserCheck className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 tracking-tight">6</div>
+        </div>
+
+        {/* Card 4: Approved Deliverables (28) */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-600">Approved Deliverables</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 tracking-tight">28</div>
+        </div>
+
+        {/* Card 5: Blocked Items (5) */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-600">Blocked Items</span>
+            <div className="w-8 h-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-slate-900 tracking-tight">5</div>
+        </div>
+      </div>
+
+      {/* 3. Four Tabs matching Panel 2 */}
+      <div className="border-b border-slate-200">
+        <nav className="flex gap-6 overflow-x-auto">
+          {[
+            { id: 'production', label: 'Content production' },
+            { id: 'creative', label: 'Creative review' },
+            { id: 'campaigns', label: 'Campaigns & paid media' },
+            { id: 'seo', label: 'SEO & growth' }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`pb-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? 'border-indigo-600 text-indigo-700'
+                  : 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* TAB 1: CONTENT PRODUCTION BOARD MATCHING PANEL 2 */}
+      {activeTab === 'production' && (
+        <div className="space-y-4">
+          {/* Filter and Search Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="h-4 w-4 text-slate-600 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search content by title, client or content ID..."
+                className="w-full text-xs pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All clients</option>
+                <option value="City Care">City Care Hospital</option>
+                <option value="Nirvaan">Nirvaan Wellness</option>
+                <option value="MediScan">MediScan Diagnostics</option>
+                <option value="Arogya">Arogya Ayurveda</option>
+                <option value="Sunrise">Sunrise Dental Studio</option>
+              </select>
+
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All types</option>
+                <option value="Social Media">Social Media</option>
+                <option value="Blog">Blog Article</option>
+                <option value="Video">Video</option>
+                <option value="Content Pack">Content Pack</option>
+                <option value="Paid Ads">Paid Ads</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="all">All status</option>
+                <option value="In Production">In Production</option>
+                <option value="In Review">In Review</option>
+                <option value="Client Review">Client Review</option>
+                <option value="Ready for Approval">Ready for Approval</option>
+                <option value="Blocked">Blocked</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Content Items List matching Panel 2 */}
+          <div className="space-y-3">
+            {filteredItems.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-600">
+                No content items match the selected filters.
+              </div>
+            ) : (
+              filteredItems.map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() => navigate(`/marketing/${c.id}`)}
+                  className="bg-white rounded-xl border border-slate-200 p-4 hover:border-indigo-300 hover:shadow-xs transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  {/* Left: Icon, Title, Subtitle, Badges, Progress */}
+                  <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                    <div
+                      className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${getTypeBg(
+                        c.type
+                      )}`}
+                    >
+                      {getTypeIcon(c.type)}
+                    </div>
+
+                    <div className="space-y-2 flex-1 min-w-0 max-w-xl">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-slate-900 truncate hover:text-indigo-600 transition-colors">
+                            {c.title}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          {c.id} · {c.client}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] px-2 py-0.5 rounded font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          {c.type}
+                        </span>
+                        <span className="text-[11px] px-2 py-0.5 rounded font-mono font-semibold bg-slate-100 text-slate-700">
+                          {c.version}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar matching Panel 2 */}
+                      <div className="flex items-center gap-2.5 max-w-md pt-0.5">
+                        <div className="h-1.5 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              c.status.toLowerCase().includes('blocked')
+                                ? 'bg-rose-500'
+                                : c.progress >= 90
+                                ? 'bg-emerald-500'
+                                : 'bg-indigo-600'
+                            }`}
+                            style={{ width: `${c.progress}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-slate-600">{c.progress}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Status badge, Due date, Avatar */}
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                    {getStatusBadge(c.status)}
+                    <div className="text-xs text-slate-600 font-medium">Due {c.due}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-[10px] text-slate-700">
+                        {c.ownerInitials || 'AG'}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              ))
+            )}
+          </div>
         </div>
       )}
 
-      {tab === 'campaigns' && (
-        <Card title="Paid media campaigns" subtitle="Spend monitoring is continuous; budget changes beyond approved caps require human approval" bodyClass="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px]">
-              <thead className="border-b border-slate-100 bg-slate-50/60">
-                <tr>
-                  <th className="th">Campaign</th>
-                  <th className="th">Channel</th>
-                  <th className="th">Budget</th>
-                  <th className="th">Spend</th>
-                  <th className="th">CPC</th>
-                  <th className="th">CPA</th>
-                  <th className="th">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {campaigns.map((c) => (
-                  <tr key={c.id} className="transition hover:bg-slate-50/60">
-                    <td className="td">
-                      <p className="font-medium text-slate-800">{c.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{c.note}</p>
-                    </td>
-                    <td className="td"><Badge color="slate">{c.channel}</Badge></td>
-                    <td className="td text-slate-600">₹{(c.budget / 1000).toFixed(0)}k</td>
-                    <td className="td">
-                      <div className="flex items-center gap-2">
-                        <ProgressBar value={(c.spend / c.budget) * 100} className="h-1.5 w-20" color={c.spend / c.budget > 0.9 ? 'bg-rose-500' : 'bg-indigo-500'} />
-                        <span className="text-xs text-slate-500">₹{(c.spend / 1000).toFixed(0)}k</span>
+      {/* TAB 2: CREATIVE REVIEW */}
+      {activeTab === 'creative' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+            <h2 className="text-sm font-bold text-slate-900 mb-1">Creative Review & Quality Assurance</h2>
+            <p className="text-xs text-slate-600 mb-4">
+              Deliverables awaiting internal creative check, clinical claim screening, or client review.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {items
+                .filter((c) =>
+                  ['In Review', 'Ready for Approval', 'Blocked'].includes(c.status)
+                )
+                .map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-indigo-300 transition-all space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[11px] font-mono text-slate-600">{c.id}</span>
+                        <h4 className="text-sm font-bold text-slate-900">{c.title}</h4>
+                        <p className="text-xs text-slate-600">{c.client} · {c.version}</p>
                       </div>
-                    </td>
-                    <td className="td text-slate-600">{c.cpc ? `₹${c.cpc}` : '—'}</td>
-                    <td className="td text-slate-600">{c.cpa ? `₹${c.cpa}` : '—'}</td>
-                    <td className="td"><StatusBadge status={c.status} /></td>
-                  </tr>
+                      {getStatusBadge(c.status)}
+                    </div>
+
+                    <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">QA Progress:</span>
+                        <span className="font-semibold text-slate-800">{c.qaStatus}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">Assigned Reviewer:</span>
+                        <span className="font-semibold text-slate-800">{c.assignedPosition}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-xs text-slate-600">Target Due: {c.due}</span>
+                      <button
+                        onClick={() => navigate(`/marketing/${c.id}`)}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1"
+                      >
+                        Inspect Review <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+            </div>
           </div>
-          <div className="mx-5 mb-5 mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-800 ring-1 ring-amber-200">
-            <MousePointerClick className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>Major ad-spend changes are reserved human decisions (Class E). The Maternity Launch campaign is held at the approval gate until the Founder authorises the ₹1.2L/month cap.</span>
-          </div>
-        </Card>
+        </div>
       )}
 
-      {tab === 'seo' && (
-        <Card title="SEO & growth — keyword performance" subtitle="Organic rankings and traffic from authorised Search Console data" bodyClass="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px]">
-              <thead className="border-b border-slate-100 bg-slate-50/60">
-                <tr>
-                  <th className="th">Page</th>
-                  <th className="th">Target keyword</th>
-                  <th className="th">Position</th>
-                  <th className="th">Change</th>
-                  <th className="th">Traffic (30d)</th>
-                  <th className="th">Trend</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {seoItems.map((s) => (
-                  <tr key={s.page} className="transition hover:bg-slate-50/60">
-                    <td className="td font-mono text-xs text-slate-600">{s.page}</td>
-                    <td className="td text-slate-700">{s.kw}</td>
-                    <td className="td font-semibold text-slate-800">#{s.pos}</td>
-                    <td className="td">
-                      <span className={s.prev > s.pos ? 'text-emerald-600' : s.prev < s.pos ? 'text-rose-600' : 'text-slate-400'}>
-                        {s.prev > s.pos ? `▲ ${s.prev - s.pos}` : s.prev < s.pos ? `▼ ${s.pos - s.prev}` : '—'}
-                      </span>
-                    </td>
-                    <td className="td text-slate-600">{s.traffic.toLocaleString()}</td>
-                    <td className="td"><Badge color={s.status === 'improving' ? 'green' : s.status === 'declining' ? 'red' : 'slate'}>{s.status}</Badge></td>
+      {/* TAB 3: CAMPAIGNS & PAID MEDIA */}
+      {activeTab === 'campaigns' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Paid Media Campaigns & Ad Spend</h2>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Platform connections, active budgets, performance telemetry, and commercial authority thresholds.
+                </p>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg inline-flex items-center gap-1.5 self-start">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Platform APIs Connected
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <th className="p-3.5">Campaign Name</th>
+                    <th className="p-3.5">Client & Channel</th>
+                    <th className="p-3.5">Monthly Budget</th>
+                    <th className="p-3.5">Current Spend</th>
+                    <th className="p-3.5">CPC / CPA</th>
+                    <th className="p-3.5">Conversions</th>
+                    <th className="p-3.5">Platform Status</th>
+                    <th className="p-3.5">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {campaigns.map((camp) => (
+                    <tr key={camp.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3.5">
+                        <div className="font-bold text-slate-900">{camp.name}</div>
+                        <div className="text-[11px] font-mono text-slate-600">{camp.id}</div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-medium text-slate-800">{camp.client}</div>
+                        <div className="text-[11px] text-slate-600">{camp.channel}</div>
+                      </td>
+                      <td className="p-3.5 font-bold text-slate-900">
+                        ₹{(camp.budgetMonthly).toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-semibold text-slate-800">
+                          ₹{(camp.spendCurrent).toLocaleString('en-IN')}
+                        </div>
+                        <div className="text-[10px] text-slate-600">
+                          {Math.round((camp.spendCurrent / camp.budgetMonthly) * 100)}% utilized
+                        </div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-medium text-slate-800">{camp.cpc}</div>
+                        <div className="text-[11px] text-slate-600">CPA: {camp.cpa}</div>
+                      </td>
+                      <td className="p-3.5 font-semibold text-slate-800">
+                        {camp.conversions > 0 ? camp.conversions : '—'}
+                      </td>
+                      <td className="p-3.5">
+                        <span className="text-[11px] px-2 py-0.5 rounded font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {camp.platformConnection}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        <span
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                            camp.status === 'Active'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : camp.status === 'Awaiting Approval'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {camp.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 bg-amber-50 border-t border-amber-200 flex items-start gap-3 text-xs text-amber-800">
+              <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Human Commercial Authority Rule:</span> Any ad spend commitment exceeding ₹50,000/month or external campaign activation requires verified human sign-off via Tasks & Approvals.
+              </div>
+            </div>
           </div>
-        </Card>
+        </div>
+      )}
+
+      {/* TAB 4: SEO & GROWTH */}
+      {activeTab === 'seo' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="p-5 border-b border-slate-200">
+              <h2 className="text-sm font-bold text-slate-900">Organic Search Rankings & Traffic Trends</h2>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Target keyword positions, URL rankings, and monthly organic patient search intent.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <th className="p-3.5">Monitored Keyword</th>
+                    <th className="p-3.5">Client & Target Page</th>
+                    <th className="p-3.5">Current Position</th>
+                    <th className="p-3.5">Previous (30d)</th>
+                    <th className="p-3.5">Organic Traffic</th>
+                    <th className="p-3.5">Trajectory</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {seoItems.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3.5 font-bold text-slate-900">
+                        "{item.kw}"
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-medium text-slate-800">{item.client}</div>
+                        <div className="text-[11px] font-mono text-indigo-600">{item.page}</div>
+                      </td>
+                      <td className="p-3.5">
+                        <span className="text-sm font-bold text-slate-900">#{item.pos}</span>
+                      </td>
+                      <td className="p-3.5 text-slate-600">
+                        #{item.prev}
+                      </td>
+                      <td className="p-3.5 font-semibold text-slate-800">
+                        {item.traffic.toLocaleString()} visits/mo
+                      </td>
+                      <td className="p-3.5">
+                        {item.status === 'Improving' && (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                            <TrendingUp className="h-3 w-3" /> Improving (+{item.prev - item.pos})
+                          </span>
+                        )}
+                        {item.status === 'Stable' && (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
+                            <Minus className="h-3 w-3" /> Stable
+                          </span>
+                        )}
+                        {item.status === 'Declining' && (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
+                            <TrendingDown className="h-3 w-3" /> Declining ({item.prev - item.pos})
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Content Deliverable Modal */}
+      {createModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Create Content Deliverable</h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Initialize a new creative asset in the content production pipeline.
+                </p>
+              </div>
+              <button
+                onClick={() => setCreateModalOpen(false)}
+                className="p-1 rounded-lg text-slate-600 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSubmit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Deliverable Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={createForm.title}
+                  onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
+                  placeholder="e.g. Hypertension Awareness Infographic"
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Client Organisation
+                  </label>
+                  <select
+                    value={createForm.client}
+                    onChange={(e) => setCreateForm({ ...createForm, client: e.target.value })}
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value="City Care Hospital">City Care Hospital</option>
+                    <option value="Nirvaan Wellness">Nirvaan Wellness</option>
+                    <option value="MediScan Diagnostics">MediScan Diagnostics</option>
+                    <option value="Arogya Ayurveda">Arogya Ayurveda</option>
+                    <option value="Sunrise Dental Studio">Sunrise Dental Studio</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Deliverable Type
+                  </label>
+                  <select
+                    value={createForm.type}
+                    onChange={(e) => setCreateForm({ ...createForm, type: e.target.value })}
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value="Social Media">Social Media Post</option>
+                    <option value="Blog">Blog Article</option>
+                    <option value="Video">Video / Reel</option>
+                    <option value="Content Pack">Content Pack</option>
+                    <option value="Paid Ads">Paid Ad Creative</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Target Deadline
+                  </label>
+                  <input
+                    type="text"
+                    value={createForm.due}
+                    onChange={(e) => setCreateForm({ ...createForm, due: e.target.value })}
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Assigned Owner
+                  </label>
+                  <input
+                    type="text"
+                    value={createForm.owner}
+                    onChange={(e) => setCreateForm({ ...createForm, owner: e.target.value })}
+                    className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Brief Objective & Key Message
+                </label>
+                <textarea
+                  rows={2}
+                  value={createForm.objective}
+                  onChange={(e) => setCreateForm({ ...createForm, objective: e.target.value })}
+                  placeholder="Outline core message and clinical accuracy requirements..."
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setCreateModalOpen(false)}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors"
+                >
+                  Create Deliverable
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

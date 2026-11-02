@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { PlayCircle, Sparkles, CheckCircle2, Circle, Loader2, Lock, ArrowRight, RotateCcw, Eye } from 'lucide-react'
 import { Card, PageHeader, Badge, SimulationBanner, ProgressBar } from '../components/ui'

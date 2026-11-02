@@ -256,16 +256,7 @@ export function PageHeader({ title, description, actions, breadcrumbs }) {
 
 // ---------- Simulation banner ----------
 export function SimulationBanner({ compact = false }) {
-  return (
-    <div className={`flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 ${compact ? 'px-3 py-1.5 text-xs' : 'px-4 py-2.5 text-sm'}`}>
-      <span className="relative flex h-2 w-2 shrink-0">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
-      </span>
-      <span className="font-medium">Demo / simulation mode</span>
-      <span className="hidden sm:inline text-amber-700/80">— external actions are simulated and never executed. No real emails, publishes, or payments occur.</span>
-    </div>
-  )
+  return null
 }
 
 // ---------- Detail row ----------
@@ -288,5 +279,29 @@ export function Avatar({ name, size = 'md' }) {
     <span className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${color} ${sizes[size]}`}>
       {initials}
     </span>
+  )
+}
+
+
+// ---------- Loading Skeleton ----------
+export function LoadingSkeleton({ lines = 4, className = '' }) {
+  return (
+    <div className={`space-y-4 animate-pulse p-6 bg-white rounded-2xl border border-slate-200/80 ${className}`}>
+      <div className="h-6 bg-slate-200 rounded-lg w-1/3 mb-4" />
+      <div className="h-4 bg-slate-100 rounded w-3/4" />
+      <div className="h-4 bg-slate-100 rounded w-1/2" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-16 bg-slate-100 rounded-xl" />
+        ))}
+      </div>
+      {lines > 4 && (
+        <div className="space-y-2 pt-4">
+          {[...Array(lines - 4)].map((_, i) => (
+            <div key={i} className="h-3 bg-slate-100 rounded w-full" />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

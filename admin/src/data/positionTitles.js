@@ -11,6 +11,21 @@ export const deptTitles = {
     { t: 'Milestone & Roadmap Coordinator' },
     { t: 'Executive Reporting & Board Readiness Analyst' }
   ],
+  SAL: [
+    { t: 'Head of Business Development', n: 'Vikram' },
+    { t: 'Sales Strategy & Commercial Pipeline Analyst' },
+    { t: 'Revenue Operations & Pipeline Analyst' },
+    { t: 'Healthcare Market Scanning & Prospect Analyst', n: 'Khoj' },
+    { t: 'Lead Enrichment, Verification & Qualification Specialist', n: 'Lakshit' },
+    { t: 'Outbound Campaign Orchestration Specialist', n: 'Sampark' },
+    { t: 'Meeting Scheduling & Calendar Coordinator', n: 'Amantran' },
+    { t: 'Sales Discovery & Client Requirements Specialist', n: 'Samvaad' },
+    { t: 'Commercial Proposal & Scope Preparation Specialist', n: 'Prastav' },
+    { t: 'Commercial Terms, Pricing & Contracting Specialist', n: 'Anubandh' },
+    { t: 'Sales Follow-up & Opportunity Nurturing Specialist', n: 'Anugrah' },
+    { t: 'Account Expansion & Cross-Selling Specialist', n: 'Vistaar' },
+    { t: 'Sales-to-Onboarding Commercial Handover Coordinator', n: 'Setu' }
+  ],
   SBD: [
     { t: 'Head of Business Development', n: 'Karthik' },
     { t: 'Prospect Research & Qualification Analyst' },
