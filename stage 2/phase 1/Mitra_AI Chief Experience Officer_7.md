@@ -735,7 +735,7 @@ NABZ (client health) ──► SAMRIDDHI (retention) ──► NAVIKARAN (renewa
 
 ## 17. BUILD INSTRUCTIONS (for the AI coding agent)
 
-Give this section to the coding agent. It defines exactly what to build.
+Give this section to the coding agent. It defines exactly what to build — including exact tool schemas, state schema, DB DDL, Celery tasks, and test scaffolding. **Shared schemas (bus envelope, authority guard, base state, Celery routing, core DDL, seed fixtures) are defined in `P0_Architecture_5.md` section 5.4 — build against those, do not redefine.**
 
 ### 17.1 Stack (all local, zero cost)
 
@@ -762,12 +762,16 @@ Give this section to the coding agent. It defines exactly what to build.
 ```
 samrudhi-p1/
 ├── agents/
-│   └── mitra.py                # Mitra's LangGraph agent
+│   ├── base_state.py           # BaseAgentState TypedDict (shared — see arch sec 5.4.3)
+│   ├── registry.py             # get_agent(agent_id) factory
+│   ├── mitra_state.py          # MitraState extends BaseAgentState
+│   └── mitra.py                # Mitra's LangGraph graph
 ├── config/
 │   └── agents/
-│       └── mitra.yaml          # model, tools, limits, authority matrix
+│       └── mitra.yaml          # model, tools, limits, authority_matrix
 ├── tools/
-│   └── mitra_tools.py          # the 16 tools from section 11
+│   ├── authority.py            # authority_guard decorator (shared — see arch sec 5.4.2)
+│   └── mitra_tools.py          # the 16 tools from section 11 (schemas below)
 ├── cx/
 │   ├── onboarding.py           # MIT-W01: sales handover + onboarding
 │   ├── requirements.py         # MIT-W02: requirements + briefing
@@ -775,80 +779,458 @@ samrudhi-p1/
 │   ├── approval.py             # MIT-W04: approval + publication coordination
 │   └── retention.py            # MIT-W05: client health + reviews + retention
 ├── models/
-│   ├── client.py               # client master profile
-│   ├── client_health.py        # health score, sentiment
-│   ├── retention.py            # renewal tracking, expansion
-│   └── client_feedback.py      # CSAT, NPS, feedback
+│   ├── client.py               # client master profile (DDL below)
+│   ├── client_health.py        # health score, sentiment (DDL below)
+│   ├── retention.py            # renewal tracking, expansion (DDL below)
+│   └── client_feedback.py      # CSAT, NPS, feedback (DDL below)
 ├── workflows/
 │   ├── mit_w01_onboarding.py
 │   ├── mit_w02_requirements.py
 │   ├── mit_w03_delivery.py
 │   ├── mit_w04_approval.py
 │   └── mit_w05_retention.py
+├── tasks.py                    # Celery run_agent task (shared — see arch sec 5.4.4)
 ├── bus/
-│   └── messages.py             # shared P0/P1 message protocol
+│   └── messages.py             # BusEnvelope model + publish/subscribe (shared — arch sec 5.4.1)
 └── tests/
-    └── test_mitra.py           # the 9 scenarios (section 13.3)
+    ├── conftest.py             # pytest fixtures (db_session, demo_tenant autouse)
+    └── test_mitra.py           # the 9 scenarios (section 13.3) — scaffolding below
 ```
 
-### 17.3 Mitra's database tables
+### 17.3 Mitra's LangGraph state (`agents/mitra_state.py`)
 
-**`clients`** (client master profile)
+Extends `BaseAgentState` from the shared base. Define exactly:
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Client ID |
-| company_name | VARCHAR | Legal entity |
-| stakeholders | JSON | Names, roles, communication preferences |
-| brand_assets | JSON | Guidelines, logos, tone of voice |
-| service_scope | JSON | Approved deliverables, SLAs |
-| historical_context | JSON | Past projects, feedback, preferences |
-| contract_status | ENUM | active / renewing / expired |
-| health_score | NUMERIC | Satisfaction, engagement, risk indicators |
-| access_credentials | JSON | Approved platform access (tenant-scoped) |
-| created_at / updated_at | TIMESTAMP | |
+```python
+# agents/mitra_state.py
+from typing import TypedDict, Optional, Any
+from agents.base_state import BaseAgentState
+
+class MitraState(BaseAgentState):
+    # MITRA-SPECIFIC FIELDS
+    client_id: Optional[str]                 # input: client tenant ID
+    feedback_records: list[dict[str, Any]]   # feedback captured this run
+    health_updates: list[dict[str, Any]]     # health score changes
+    signoffs: list[dict[str, Any]]           # client approvals recorded
+    retention_actions: list[dict[str, Any]]  # retention/renewal actions
+    handoff_events: list[str]                # bus event_ids emitted (for audit)
+```
+
+### 17.4 Mitra's database tables (full SQLAlchemy models + DDL)
+
+**`clients`** — client master profile
+
+```python
+# models/client.py
+from sqlalchemy import Column, String, Numeric, JSON, DateTime, Enum, func
+from sqlalchemy.dialects.postgresql import UUID
+from models.base import Base
+
+class ContractStatus:
+    ACTIVE = "active"
+    RENEWING = "renewing"
+    EXPIRED = "expired"
+
+class Client(Base):
+    __tablename__ = "clients"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    client_id = Column(String(50), unique=True, nullable=False, index=True)  # DEMO-HEALTHCARE-01
+    company_name = Column(String(200), nullable=False)
+    stakeholders = Column(JSON, nullable=False, default=list)
+    brand_assets = Column(JSON, nullable=False, default=dict)
+    service_scope = Column(JSON, nullable=False, default=dict)
+    historical_context = Column(JSON, nullable=False, default=dict)
+    contract_status = Column(String(20), nullable=False, default=ContractStatus.ACTIVE)
+    health_score = Column(Numeric(5, 2), default=0.0)
+    access_credentials = Column(JSON, nullable=False, default=dict)  # tenant-scoped only
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+```
 
 **`client_health`** (append-only health tracking)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Health record ID |
-| client_id | UUID (FK) | Client |
-| score | NUMERIC | Health score |
-| status | ENUM | satisfied / watch / at-risk / churn-risk |
-| factors | JSON | What drives the score |
-| recorded_at | TIMESTAMP | |
+```python
+# models/client_health.py
+class HealthStatus:
+    SATISFIED = "satisfied"
+    WATCH = "watch"
+    AT_RISK = "at-risk"
+    CHURN_RISK = "churn-risk"
+
+class ClientHealth(Base):
+    __tablename__ = "client_health"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    health_id = Column(String(20), unique=True, nullable=False, index=True)
+    client_id = Column(String(50), ForeignKey("clients.client_id"), nullable=False, index=True)
+    score = Column(Numeric(5, 2), nullable=False)
+    status = Column(String(20), nullable=False, default=HealthStatus.SATISFIED)
+    factors = Column(JSON, nullable=False, default=dict)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+```
 
 **`retention`** (append-only retention tracking)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Retention record ID |
-| client_id | UUID (FK) | Client |
-| renewal_date | DATE | Contract expiry |
-| renewal_status | ENUM | on-track / at-risk / renewed / churned |
-| expansion_opportunities | JSON | Identified opportunities |
-| actions | JSON | Retention actions taken |
-| recorded_at | TIMESTAMP | |
+```python
+# models/retention.py
+class RenewalStatus:
+    ON_TRACK = "on-track"
+    AT_RISK = "at-risk"
+    RENEWED = "renewed"
+    CHURNED = "churned"
 
-### 17.4 Mitra's tools (implementation spec)
+class Retention(Base):
+    __tablename__ = "retention"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    retention_id = Column(String(20), unique=True, nullable=False, index=True)
+    client_id = Column(String(50), ForeignKey("clients.client_id"), nullable=False, index=True)
+    renewal_date = Column(DateTime(timezone=True))
+    renewal_status = Column(String(20), nullable=False, default=RenewalStatus.ON_TRACK)
+    expansion_opportunities = Column(JSON, nullable=False, default=list)
+    actions = Column(JSON, nullable=False, default=list)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+```
 
-See section 11 for the list. Implementation rules:
-- Every tool call logged to `execution_log` (agent_id, tool, input hash, output ref, tokens).
-- `record_signoff` requires client evidence before writing — no sign-off without evidence.
-- `verify_approval` checks sign-off evidence exists before allowing publishing.
-- `monitor_client_health` writes to `client_health` table (append-only).
-- Tenant isolation enforced on all client queries — cross-tenant access refused.
+**`client_feedback`** (append-only — see arch sec 5.2 for base DDL, add below)
 
-### 17.5 Mitra's system prompt
+```sql
+CREATE TYPE health_status AS ENUM ('satisfied','watch','at-risk','churn-risk');
+CREATE TABLE clients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id VARCHAR(50) NOT NULL UNIQUE,
+  company_name VARCHAR(200) NOT NULL,
+  stakeholders JSONB NOT NULL DEFAULT '[]',
+  brand_assets JSONB NOT NULL DEFAULT '{}',
+  service_scope JSONB NOT NULL DEFAULT '{}',
+  historical_context JSONB NOT NULL DEFAULT '{}',
+  contract_status VARCHAR(20) NOT NULL DEFAULT 'active',
+  health_score NUMERIC(5,2) DEFAULT 0.0,
+  access_credentials JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_clients_client_id ON clients(client_id);
 
-Use the full system prompt from **section 10** verbatim.
+CREATE TABLE client_health (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  health_id VARCHAR(20) NOT NULL UNIQUE,
+  client_id VARCHAR(50) NOT NULL REFERENCES clients(client_id),
+  score NUMERIC(5,2) NOT NULL,
+  status health_status NOT NULL DEFAULT 'satisfied',
+  factors JSONB NOT NULL DEFAULT '{}',
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_health_client ON client_health(client_id);
 
-### 17.6 Test Mitra before going live
+CREATE TYPE renewal_status AS ENUM ('on-track','at-risk','renewed','churned');
+CREATE TABLE retention (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  retention_id VARCHAR(20) NOT NULL UNIQUE,
+  client_id VARCHAR(50) NOT NULL REFERENCES clients(client_id),
+  renewal_date TIMESTAMPTZ,
+  renewal_status renewal_status NOT NULL DEFAULT 'on-track',
+  expansion_opportunities JSONB NOT NULL DEFAULT '[]',
+  actions JSONB NOT NULL DEFAULT '[]',
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_retention_client ON retention(client_id);
+```
 
-See section 13.3 — the 9 scenarios. All must pass before Satya's evaluation and human activation.
+### 17.5 Mitra's tools (exact Pydantic schemas)
 
-### 17.7 Out of scope (Mitra does NOT do these)
+Every tool is a function decorated with `@authority_guard`. Input/output use these exact Pydantic models. Defined in `tools/mitra_tools.py`:
+
+```python
+# tools/mitra_tools.py
+from pydantic import BaseModel, Field
+from typing import Optional, Any
+from tools.authority import authority_guard
+
+# --- Input schemas ---
+class OnboardClientIn(BaseModel):
+    client_id: str
+    sales_handover: dict[str, Any]
+
+class RecordRequirementsIn(BaseModel):
+    client_id: str
+    requirements: list[dict[str, Any]]
+
+class CoordinateDeliveryIn(BaseModel):
+    client_id: str
+    workflow_id: str
+    communication_type: str = Field(..., pattern="^(update|milestone|issue|final)$")
+
+class RecordSignoffIn(BaseModel):
+    client_id: str
+    deliverable_ref: str
+    evidence_ref: str = Field(..., description="client approval evidence reference")
+
+class VerifyApprovalIn(BaseModel):
+    deliverable_ref: str
+
+class CollectFeedbackIn(BaseModel):
+    client_id: str
+    feedback_type: str = Field(..., pattern="^(csat|nps|comment)$")
+    score: Optional[float] = None
+    comment: Optional[str] = None
+
+class MonitorClientHealthIn(BaseModel):
+    client_id: str
+
+class CreateRetentionPlanIn(BaseModel):
+    client_id: str
+    renewal_date: str
+
+class RecordRetentionActionIn(BaseModel):
+    client_id: str
+    action_type: str
+    details: dict[str, Any]
+
+class GetClientSummaryIn(BaseModel):
+    client_id: str
+
+# --- Output schemas ---
+class ClientOnboarding(BaseModel):
+    client_id: str
+    onboarded: bool
+    stakeholders: list[dict]
+    service_scope: dict
+
+class RequirementsRecord(BaseModel):
+    client_id: str
+    requirements: list[dict]
+    brief_ref: Optional[str]
+
+class DeliveryCoordination(BaseModel):
+    workflow_id: str
+    status: str
+    communication_sent: bool
+    blockers: list[dict]
+
+class SignoffRecord(BaseModel):
+    deliverable_ref: str
+    client_id: str
+    evidence_ref: str
+    recorded: bool
+    refused_reason: Optional[str] = None
+
+class FeedbackRecord(BaseModel):
+    feedback_id: str
+    client_id: str
+    feedback_type: str
+    score: Optional[float]
+    sentiment: str  # "positive" | "neutral" | "negative"
+
+class HealthRecord(BaseModel):
+    client_id: str
+    score: float
+    status: str
+    factors: dict
+    trend: str  # "improving" | "stable" | "declining"
+
+class RetentionPlan(BaseModel):
+    client_id: str
+    renewal_date: str
+    renewal_status: str
+    expansion_opportunities: list[dict]
+
+class ClientSummary(BaseModel):
+    client_id: str
+    company_name: str
+    contract_status: str
+    health_score: float
+    open_deliverables: int
+    pending_approvals: int
+    last_feedback_at: Optional[str]
+```
+
+**Tool implementations — key guard rules:**
+
+```python
+@authority_guard(action="record_signoff", required_permission="cx.signoff", allowed_agents=["SAM-AG-004"])
+def record_signoff(inp: RecordSignoffIn) -> SignoffRecord:
+    # 1. Verify evidence_ref exists (client approval evidence recorded)
+    # 2. If missing → return recorded=False, refused_reason="no_evidence"
+    # 3. If present → write to approvals table, return recorded=True
+    ...
+
+@authority_guard(action="monitor_client_health", required_permission="cx.health", allowed_agents=["SAM-AG-004"])
+def monitor_client_health(inp: MonitorClientHealthIn) -> HealthRecord:
+    # Writes to client_health table (append-only); never modifies client master record directly
+    ...
+```
+
+### 17.6 Mitra's authority_matrix (`config/agents/mitra.yaml`)
+
+```yaml
+agent_id: SAM-AG-004
+name: Mitra
+model: qwen2.5:7b
+system_prompt_ref: section_10
+tools:
+  - onboard_client
+  - record_requirements
+  - coordinate_delivery
+  - record_signoff
+  - verify_approval
+  - collect_feedback
+  - monitor_client_health
+  - create_retention_plan
+  - record_retention_action
+  - get_client_summary
+authority_matrix:
+  cx.onboard: true
+  cx.requirements: true
+  cx.coordinate: true
+  cx.signoff: true        # requires evidence_ref
+  cx.verify: true
+  cx.feedback: true
+  cx.health: true
+  cx.retention: true
+  cx.change_contract: false   # NEVER — human owner
+  cx.change_pricing: false    # NEVER — Niti + human
+  cx.make_commercial: false   # NEVER — Sales + human
+limits:
+  max_clients_per_run: 20
+  token_budget_per_run: 150000
+```
+
+### 17.7 Mitra's Celery task wiring
+
+Mitra runs via the shared `tasks.run_agent` task (arch sec 5.4.4). Register the agent:
+
+```python
+# agents/registry.py
+from agents.mitra import build_mitra_graph
+
+AGENT_FACTORIES = {
+    "SAM-AG-004": build_mitra_graph,
+    # ... other agents
+}
+```
+
+### 17.8 Test scaffolding (`tests/test_mitra.py`)
+
+The 9 scenarios from section 13.3 as executable pytest. Full scaffolding:
+
+```python
+# tests/test_mitra.py
+import pytest
+from unittest.mock import patch
+from agents.registry import get_agent
+from seed_p1 import seed_demo
+
+@pytest.fixture(autouse=True)
+def demo_tenant(db_session):
+    seed_demo(db_session)
+    yield
+
+@pytest.mark.asyncio
+async def test_1_refuse_signoff_without_evidence():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "record signoff for DEL-001",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("recorded") is False
+    assert result.get("refused_reason") == "no_evidence"
+
+@pytest.mark.asyncio
+async def test_2_refuse_contract_change():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "change contract terms for DEMO-HEALTHCARE-01",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+
+@pytest.mark.asyncio
+async def test_3_refuse_pricing_change():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "update pricing for DEMO-HEALTHCARE-01",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+
+@pytest.mark.asyncio
+async def test_4_tenant_isolation():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "get summary for CLIENT-OTHER-02",
+        "tenant_id": "DEMO-HEALTHCARE-01",  # different tenant
+    })
+    assert result.get("refused") is True
+    assert "tenant" in result.get("error", "").lower()
+
+@pytest.mark.asyncio
+async def test_5_record_feedback():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "collect CSAT feedback from DEMO-HEALTHCARE-01 score 4.5",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("feedback_id")
+    assert result["sentiment"] in ("positive", "neutral", "negative")
+
+@pytest.mark.asyncio
+async def test_6_monitor_health():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "monitor client health for DEMO-HEALTHCARE-01",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("score") is not None
+    assert result.get("status") in ("satisfied", "watch", "at-risk", "churn-risk")
+
+@pytest.mark.asyncio
+async def test_7_verify_approval():
+    mitra = get_agent("SAM-AG-004")
+    result = await mitra.ainvoke({
+        "task": "verify approval for DEL-002",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("approved") in (True, False)
+
+@pytest.mark.asyncio
+async def test_8_idempotent_signoff():
+    mitra = get_agent("SAM-AG-004")
+    r1 = await mitra.ainvoke({
+        "task": "record signoff for DEL-003 with evidence REF-012",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    r2 = await mitra.ainvoke({
+        "task": "record signoff for DEL-003 with evidence REF-012 again",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert r1.get("recorded") is True
+    assert r2.get("already_recorded") is True
+
+@pytest.mark.asyncio
+async def test_9_model_unavailable_no_crash():
+    mitra = get_agent("SAM-AG-004")
+    with patch("agents.base.llm_available", return_value=False):
+        result = await mitra.ainvoke({
+            "task": "collect feedback from DEMO-HEALTHCARE-01",
+            "tenant_id": "DEMO-HEALTHCARE-01",
+        })
+    assert result["status"] == "failed"
+    assert "model unavailable" in result.get("error", "").lower()
+    assert result.get("fake_output") is None
+```
+
+### 17.9 Build order for the coding agent
+
+1. Apply the shared DDL (`P0_Architecture_5.md` sec 5.4.5) + Mitra's DDL above + append-only grants.
+2. Create `agents/mitra_state.py` (extends shared base).
+3. Create `tools/mitra_tools.py` with the tools + Pydantic schemas above.
+4. Create `models/client.py`, `client_health.py`, `retention.py`, `client_feedback.py`.
+5. Create `config/agents/mitra.yaml` with the authority_matrix above.
+6. Create `agents/mitra.py` — LangGraph graph using the system prompt from section 10, wired to the tools.
+7. Create `tests/test_mitra.py` + `tests/conftest.py` (shared fixtures).
+8. Run `pytest tests/test_mitra.py -v` — all 9 must pass.
+9. Run `seed_p1.py` to populate demo tenant, then manually invoke Mitra via the API to verify the live flow.
+
+### 17.10 Out of scope (Mitra does NOT do these)
 
 - Does NOT sell or make commercial commitments (Sales + human owners)
 - Does NOT make financial decisions (Niti's job)

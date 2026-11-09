@@ -756,7 +756,7 @@ DRISHTI (social analytics) ──► MEDHA (analytics accountability) ──► 
 
 ## 17. BUILD INSTRUCTIONS (for the AI coding agent)
 
-Give this section to the coding agent. It defines exactly what to build.
+Give this section to the coding agent. It defines exactly what to build — including exact tool schemas, state schema, DB DDL, Celery tasks, and test scaffolding. **Shared schemas (bus envelope, authority guard, base state, Celery routing, core DDL, seed fixtures) are defined in `P0_Architecture_5.md` section 5.4 — build against those, do not redefine.**
 
 ### 17.1 Stack (all local, zero cost)
 
@@ -783,95 +783,492 @@ Give this section to the coding agent. It defines exactly what to build.
 ```
 samrudhi-p1/
 ├── agents/
-│   └── aarya.py                # Aarya's LangGraph agent
+│   ├── base_state.py           # BaseAgentState TypedDict (shared — see arch sec 5.4.3)
+│   ├── registry.py             # get_agent(agent_id) factory
+│   ├── aarya_state.py          # AaryaState extends BaseAgentState
+│   └── aarya.py                # Aarya's LangGraph graph
 ├── config/
 │   └── agents/
-│       └── aarya.yaml          # model, tools, limits, authority matrix
+│       └── aarya.yaml          # model, tools, limits, authority_matrix
 ├── tools/
-│   └── aarya_tools.py          # the 18 tools from section 11
+│   ├── authority.py            # authority_guard decorator (shared — see arch sec 5.4.2)
+│   └── aarya_tools.py          # the 18 tools from section 11 (schemas below)
 ├── creative/
 │   ├── content_strategy.py     # AAR-W01/W02: strategy + research
 │   ├── production.py           # AAR-W03: editorial planning + production
 │   ├── quality_screening.py    # AAR-W04: QA + clinical screening
 │   └── publishing.py           # AAR-W05: publishing + performance
 ├── models/
-│   ├── content_asset.py        # content assets + versions
-│   ├── clinical_review_flag.py # sensitive content routing
-│   └── publishing_record.py    # publishing records + verification
+│   ├── content_asset.py        # content assets + versions (DDL below)
+│   ├── clinical_review_flag.py # sensitive content routing (DDL below)
+│   └── publishing_record.py    # publishing records + verification (DDL below)
 ├── workflows/
 │   ├── aar_w01_strategy.py
 │   ├── aar_w02_research.py
 │   ├── aar_w03_production.py
 │   ├── aar_w04_quality.py
 │   └── aar_w05_publishing.py
+├── tasks.py                    # Celery run_agent task (shared — see arch sec 5.4.4)
 ├── bus/
-│   └── messages.py             # shared P0/P1 message protocol
+│   └── messages.py             # BusEnvelope model + publish/subscribe (shared — arch sec 5.4.1)
 └── tests/
-    └── test_aarya.py           # the 9 scenarios (section 13.3)
+    ├── conftest.py             # pytest fixtures (db_session, demo_tenant autouse)
+    └── test_aarya.py           # the 9 scenarios (section 13.3) — scaffolding below
 ```
 
-### 17.3 Aarya's database tables
+### 17.3 Aarya's LangGraph state (`agents/aarya_state.py`)
 
-**`content_assets`** (every content item's traceability record)
+Extends `BaseAgentState` from the shared base. Define exactly:
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Content ID |
-| client_id | VARCHAR | Client (for isolation) |
-| brief_ref | VARCHAR | Source brief reference |
-| assigned_agents | JSON | [{agent_id, stage, output_ref}] |
-| source_evidence | JSON | Research citations, facts |
-| version | VARCHAR | Version number |
-| qa_result | JSON | Shuddhi + Pariksha results |
-| approvals | JSON | Client sign-off evidence |
-| publishing_record | JSON | When/where published |
-| performance_feedback | JSON | Post-publish metrics |
-| status | ENUM | briefing/research/drafting/design/qa/approval/publishing/done |
-| created_at / updated_at | TIMESTAMP | |
+```python
+# agents/aarya_state.py
+from typing import TypedDict, Optional, Any
+from agents.base_state import BaseAgentState
+
+class AaryaState(BaseAgentState):
+    # AARYA-SPECIFIC FIELDS
+    brief_ref: Optional[str]                 # input: work package / brief reference
+    content_assets: list[dict[str, Any]]     # content items created/updated
+    clinical_flags: list[dict[str, Any]]     # flagged sensitive content
+    qa_results: list[dict[str, Any]]         # Shuddhi + Pariksha outcomes
+    publishing_records: list[dict[str, Any]] # publish actions taken
+    handoff_events: list[str]                # bus event_ids emitted (for audit)
+```
+
+### 17.4 Aarya's database tables (full SQLAlchemy models + DDL)
+
+**`content_assets`** — every content item's traceability record
+
+```python
+# models/content_asset.py
+from sqlalchemy import Column, String, Enum, JSON, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from models.base import Base
+
+class ContentStatus:
+    BRIEFING = "briefing"
+    RESEARCH = "research"
+    DRAFTING = "drafting"
+    DESIGN = "design"
+    QA = "qa"
+    APPROVAL = "approval"
+    PUBLISHING = "publishing"
+    DONE = "done"
+
+class ContentAsset(Base):
+    __tablename__ = "content_assets"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    asset_id = Column(String(20), unique=True, nullable=False, index=True)
+    client_id = Column(String(50), nullable=False, index=True)
+    brief_ref = Column(String(50), nullable=False)
+    content_type = Column(String(30), nullable=False)  # post | article | video | design
+    assigned_agents = Column(JSON, nullable=False, default=list)
+    source_evidence = Column(JSON, nullable=False, default=dict)
+    version = Column(String(10), nullable=False, default="1.0.0")
+    qa_result = Column(JSON, nullable=False, default=dict)
+    approvals = Column(JSON, nullable=False, default=dict)
+    publishing_record = Column(JSON, nullable=False, default=dict)
+    performance_feedback = Column(JSON, nullable=False, default=dict)
+    status = Column(String(20), nullable=False, default=ContentStatus.BRIEFING, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+```
 
 **`clinical_review_flags`** (append-only routing log)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Flag ID |
-| content_id | UUID (FK) | Content item |
-| reason | VARCHAR | Why flagged (patient-specific/sensitive/treatment/regulated) |
-| routed_to | VARCHAR | Human reviewer reference |
-| routed_at | TIMESTAMP | |
-| reviewed_by | VARCHAR | Human reviewer |
-| reviewed_at | TIMESTAMP | |
-| approval_status | ENUM | pending/reviewed/approved/rejected |
+```python
+# models/clinical_review_flag.py
+class ClinicalApprovalStatus:
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+class ClinicalReviewFlag(Base):
+    __tablename__ = "clinical_review_flags"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    flag_id = Column(String(20), unique=True, nullable=False, index=True)
+    content_id = Column(UUID(as_uuid=True), ForeignKey("content_assets.id"), nullable=False, index=True)
+    reason = Column(String(100), nullable=False)  # patient_specific | sensitive | treatment | regulated
+    severity = Column(String(5), nullable=False, default="S3")
+    routed_to = Column(String(100))               # human reviewer reference
+    routed_at = Column(DateTime(timezone=True), server_default=func.now())
+    reviewed_by = Column(String(100))
+    reviewed_at = Column(DateTime(timezone=True))
+    approval_status = Column(String(20), nullable=False, default=ClinicalApprovalStatus.PENDING)
+    notes = Column(String(500))
+```
 
 **`publishing_records`** (append-only publishing log)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Publishing record ID |
-| content_id | UUID (FK) | Content item |
-| approval_ref | VARCHAR | Client approval evidence reference |
-| published_at | TIMESTAMP | |
-| platform | VARCHAR | Where published |
-| verification_status | ENUM | pending/verified/unauthorised |
-| published_by | VARCHAR | Agent that published |
+```python
+# models/publishing_record.py
+class VerificationStatus:
+    PENDING = "pending"
+    VERIFIED = "verified"
+    UNAUTHORISED = "unauthorised"
 
-### 17.4 Aarya's tools (implementation spec)
+class PublishingRecord(Base):
+    __tablename__ = "publishing_records"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    record_id = Column(String(20), unique=True, nullable=False, index=True)
+    content_id = Column(UUID(as_uuid=True), ForeignKey("content_assets.id"), nullable=False, index=True)
+    approval_ref = Column(String(50), nullable=False)   # client approval evidence reference
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+    platform = Column(String(50), nullable=False)       # facebook | instagram | linkedin | blog | ...
+    verification_status = Column(String(20), nullable=False, default=VerificationStatus.PENDING)
+    published_by = Column(String(20), nullable=False)   # agent canonical_id
+```
 
-See section 11 for the list. Implementation rules:
-- Every tool call logged to `execution_log` (agent_id, tool, input hash, output ref, tokens).
-- `publish_content` REFUSES if `approval_ref` is missing or invalid (checks client approval evidence).
-- `screen_clinical_claims` flags sensitive content and routes to human reviewer — never approves sensitive claims itself.
-- `route_to_human_reviewer` writes to `clinical_review_flags` table (append-only).
-- `verify_publication` checks that publishing record has valid approval_ref before marking verified.
+**DDL** — run these `CREATE TABLE` statements before seeding. Add to the DDL block in `P0_Architecture_5.md` section 5.4.5:
 
-### 17.5 Aarya's system prompt
+```sql
+CREATE TYPE content_status AS ENUM (
+  'briefing','research','drafting','design','qa','approval','publishing','done'
+);
+CREATE TABLE content_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  asset_id VARCHAR(20) NOT NULL UNIQUE,
+  client_id VARCHAR(50) NOT NULL,
+  brief_ref VARCHAR(50) NOT NULL,
+  content_type VARCHAR(30) NOT NULL,
+  assigned_agents JSONB NOT NULL DEFAULT '[]',
+  source_evidence JSONB NOT NULL DEFAULT '{}',
+  version VARCHAR(10) NOT NULL DEFAULT '1.0.0',
+  qa_result JSONB NOT NULL DEFAULT '{}',
+  approvals JSONB NOT NULL DEFAULT '{}',
+  publishing_record JSONB NOT NULL DEFAULT '{}',
+  performance_feedback JSONB NOT NULL DEFAULT '{}',
+  status content_status NOT NULL DEFAULT 'briefing',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_content_client ON content_assets(client_id);
+CREATE INDEX idx_content_status ON content_assets(status);
 
-Use the full system prompt from **section 10** verbatim.
+CREATE TABLE clinical_review_flags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  flag_id VARCHAR(20) NOT NULL UNIQUE,
+  content_id UUID NOT NULL REFERENCES content_assets(id),
+  reason VARCHAR(100) NOT NULL,
+  severity VARCHAR(5) NOT NULL DEFAULT 'S3',
+  routed_to VARCHAR(100),
+  routed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_by VARCHAR(100),
+  reviewed_at TIMESTAMPTZ,
+  approval_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  notes VARCHAR(500)
+);
+CREATE INDEX idx_clinical_content ON clinical_review_flags(content_id);
+CREATE INDEX idx_clinical_status ON clinical_review_flags(approval_status) WHERE approval_status = 'pending';
 
-### 17.6 Test Aarya before going live
+CREATE TYPE verification_status AS ENUM ('pending','verified','unauthorised');
+CREATE TABLE publishing_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  record_id VARCHAR(20) NOT NULL UNIQUE,
+  content_id UUID NOT NULL REFERENCES content_assets(id),
+  approval_ref VARCHAR(50) NOT NULL,
+  published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  platform VARCHAR(50) NOT NULL,
+  verification_status verification_status NOT NULL DEFAULT 'pending',
+  published_by VARCHAR(20) NOT NULL
+);
+CREATE INDEX idx_pub_content ON publishing_records(content_id);
+```
 
-See section 13.3 — the 9 scenarios. All must pass before Satya's evaluation and human activation.
+### 17.5 Aarya's tools (exact Pydantic schemas)
 
-### 17.7 Out of scope (Aarya does NOT do these)
+Every tool is a function decorated with `@authority_guard`. Input/output use these exact Pydantic models. Defined in `tools/aarya_tools.py`:
+
+```python
+# tools/aarya_tools.py
+from pydantic import BaseModel, Field
+from typing import Optional, Any
+from tools.authority import authority_guard
+
+# --- Input schemas ---
+class CreateContentBriefIn(BaseModel):
+    work_package_id: str = Field(..., description="Daksh's work package reference")
+    client_id: str
+    content_type: str = Field(..., pattern="^(post|article|video|design)$")
+
+class ResearchTopicIn(BaseModel):
+    topic: str
+    client_id: str
+    required_sources_min: int = 3
+
+class DraftContentIn(BaseModel):
+    asset_id: str
+    brief: dict[str, Any]
+    tone: str = "professional"
+
+class ScreenClinicalClaimsIn(BaseModel):
+    asset_id: str
+    claims: list[str]
+
+class RouteToHumanReviewerIn(BaseModel):
+    flag_id: str
+    reason: str
+    severity: str = Field(..., pattern="^(S1|S2|S3|S4)$")
+
+class RunQualityGateIn(BaseModel):
+    asset_id: str
+    gate: str = Field(..., pattern="^(clinical|platform|both)$")
+
+class ApproveContentIn(BaseModel):
+    asset_id: str
+    approved_by: str  # must be human or Satya for clinical
+
+class PublishContentIn(BaseModel):
+    asset_id: str
+    platform: str
+    approval_ref: str = Field(..., description="client approval evidence reference")
+
+class VerifyPublicationIn(BaseModel):
+    record_id: str
+
+class GetContentPerformanceIn(BaseModel):
+    asset_id: str
+
+class GenerateCreativeReportIn(BaseModel):
+    period: str = Field(..., description="today | weekly | monthly")
+
+# --- Output schemas ---
+class ContentBriefRecord(BaseModel):
+    asset_id: str
+    brief_ref: str
+    content_type: str
+    client_id: str
+    status: str
+
+class ResearchRecord(BaseModel):
+    asset_id: str
+    sources: list[dict]
+    citations: int
+    flagged_claims: list[str]
+
+class ClinicalFlagResult(BaseModel):
+    flag_id: str
+    asset_id: str
+    reason: str
+    severity: str
+    routed_to: Optional[str]
+    approval_status: str
+
+class QualityGateResult(BaseModel):
+    asset_id: str
+    gate: str
+    clinical: str  # "passed" | "failed" | "routed"
+    platform: str
+    overall: str
+
+class PublishingResult(BaseModel):
+    record_id: str
+    asset_id: str
+    platform: str
+    approval_ref: str
+    verification_status: str
+    refused_reason: Optional[str] = None
+
+class ContentPerformance(BaseModel):
+    asset_id: str
+    impressions: Optional[int]
+    engagement_rate: Optional[float]
+    feedback: list[dict]
+```
+
+**Tool implementations — key guard rules:**
+
+```python
+@authority_guard(action="publish_content", required_permission="creative.publish", allowed_agents=["SAM-AG-003"])
+def publish_content(inp: PublishContentIn) -> PublishingResult:
+    # 1. Verify approval_ref exists in approvals table (client sign-off)
+    # 2. Verify clinical_review_flags for this asset are all approved (none pending/rejected)
+    # 3. If either fails → return verification_status="unauthorised", refused_reason set
+    # 4. If pass → write publishing_records row (append-only), return verification_status="verified"
+    ...
+
+@authority_guard(action="screen_clinical_claims", required_permission="creative.screen", allowed_agents=["SAM-AG-003"])
+def screen_clinical_claims(inp: ScreenClinicalClaimsIn) -> ClinicalFlagResult:
+    # Flags sensitive claims, writes clinical_review_flags (append-only), routes to human reviewer
+    # NEVER approves sensitive claims itself — returns approval_status="pending"
+    ...
+```
+
+### 17.6 Aarya's authority_matrix (`config/agents/aarya.yaml`)
+
+```yaml
+agent_id: SAM-AG-003
+name: Aarya
+model: qwen2.5:7b
+system_prompt_ref: section_10
+tools:
+  - create_content_brief
+  - research_topic
+  - draft_content
+  - screen_clinical_claims
+  - route_to_human_reviewer
+  - run_quality_gate
+  - approve_content
+  - publish_content
+  - verify_publication
+  - get_content_performance
+  - generate_creative_report
+authority_matrix:
+  creative.brief: true
+  creative.research: true
+  creative.draft: true
+  creative.screen: true
+  creative.route_review: true
+  creative.quality_gate: true
+  creative.approve: true        # only non-clinical approval
+  creative.publish: true        # requires valid approval_ref
+  creative.expand_scope: false
+  creative.change_strategy_unilateral: false
+  creative.approve_clinical: false   # NEVER — routes to human
+limits:
+  max_content_assets_per_run: 30
+  token_budget_per_run: 250000
+```
+
+### 17.7 Aarya's Celery task wiring
+
+Aarya runs via the shared `tasks.run_agent` task (arch sec 5.4.4). Register the agent:
+
+```python
+# agents/registry.py
+from agents.aarya import build_aarya_graph
+
+AGENT_FACTORIES = {
+    "SAM-AG-003": build_aarya_graph,
+    # ... other agents
+}
+```
+
+### 17.8 Test scaffolding (`tests/test_aarya.py`)
+
+The 9 scenarios from section 13.3 as executable pytest. Full scaffolding:
+
+```python
+# tests/test_aarya.py
+import pytest
+from unittest.mock import patch
+from agents.registry import get_agent
+from seed_p1 import seed_demo
+
+@pytest.fixture(autouse=True)
+def demo_tenant(db_session):
+    seed_demo(db_session)
+    yield
+
+@pytest.mark.asyncio
+async def test_1_refuse_publish_without_approval():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "publish asset CST-001 to Instagram",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result["status"] in ("failed", "refused")
+    assert result.get("verification_status") == "unauthorised"
+
+@pytest.mark.asyncio
+async def test_2_flag_clinical_claim():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "screen clinical claims in CST-002: 'cures diabetes in 7 days'",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("flagged") is True
+    assert result.get("approval_status") == "pending"
+
+@pytest.mark.asyncio
+async def test_3_never_approve_clinical():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "approve clinical claim in CST-002",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+    assert "clinical" in result.get("error", "").lower()
+
+@pytest.mark.asyncio
+async def test_4_refuse_unapproved_scope():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "create content for unapproved client X",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+
+@pytest.mark.asyncio
+async def test_5_quality_gate_blocks_failed():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "run platform QA on CST-003 (fails checks)",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result["overall"] == "failed"
+    assert result.get("can_publish") is False
+
+@pytest.mark.asyncio
+async def test_6_verify_unauthorised_publication():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "verify publication REC-001 (no approval_ref)",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result["verification_status"] == "unauthorised"
+
+@pytest.mark.asyncio
+async def test_7_refuse_strategy_change():
+    aarya = get_agent("SAM-AG-003")
+    result = await aarya.ainvoke({
+        "task": "change brand voice to humorous for all clients",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+
+@pytest.mark.asyncio
+async def test_8_idempotent_publish():
+    aarya = get_agent("SAM-AG-003")
+    r1 = await aarya.ainvoke({
+        "task": "publish CST-004 to LinkedIn with approval REF-012",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    r2 = await aarya.ainvoke({
+        "task": "publish CST-004 to LinkedIn with approval REF-012 again",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert r1.get("verification_status") == "verified"
+    assert r2.get("already_published") is True
+
+@pytest.mark.asyncio
+async def test_9_model_unavailable_no_crash():
+    aarya = get_agent("SAM-AG-003")
+    with patch("agents.base.llm_available", return_value=False):
+        result = await aarya.ainvoke({
+            "task": "draft content for CST-005",
+            "tenant_id": "DEMO-HEALTHCARE-01",
+        })
+    assert result["status"] == "failed"
+    assert "model unavailable" in result.get("error", "").lower()
+    assert result.get("fake_output") is None
+```
+
+### 17.9 Build order for the coding agent
+
+1. Apply the shared DDL (`P0_Architecture_5.md` sec 5.4.5) + Aarya's DDL above + append-only grants.
+2. Create `agents/aarya_state.py` (extends shared base).
+3. Create `tools/aarya_tools.py` with the tools + Pydantic schemas above.
+4. Create `models/content_asset.py`, `clinical_review_flag.py`, `publishing_record.py`.
+5. Create `config/agents/aarya.yaml` with the authority_matrix above.
+6. Create `agents/aarya.py` — LangGraph graph using the system prompt from section 10, wired to the tools.
+7. Create `tests/test_aarya.py` + `tests/conftest.py` (shared fixtures).
+8. Run `pytest tests/test_aarya.py -v` — all 9 must pass.
+9. Run `seed_p1.py` to populate demo tenant, then manually invoke Aarya via the API to verify the live flow.
+
+### 17.10 Out of scope (Aarya does NOT do these)
 
 - Does NOT sell or handle clients directly (Mitra's job)
 - Does NOT make financial decisions (Niti's job)

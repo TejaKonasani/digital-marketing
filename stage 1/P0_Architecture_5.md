@@ -329,6 +329,7 @@ samrudhi-p0/
 │   ├── versioning.py
 │   └── capacity.py
 ├── tools/                      # each agent's function calls
+│   ├── authority.py            # shared authority_guard decorator (sec 5.4.2)
 │   ├── sutra_tools.py
 │   ├── arjun_tools.py
 │   ├── satya_tools.py
@@ -337,6 +338,17 @@ samrudhi-p0/
 │   ├── aarya_tools.py          # content generation, clinical screening tools
 │   ├── mitra_tools.py          # feedback, satisfaction tools
 │   └── medha_tools.py          # analytics, snapshot tools
+├── agents/
+│   ├── base_state.py           # BaseAgentState TypedDict (sec 5.4.3)
+│   ├── registry.py             # get_agent(agent_id) factory
+│   ├── sutra.py
+│   ├── arjun.py
+│   ├── satya.py
+│   ├── niyantrak.py
+│   ├── daksh.py
+│   ├── aarya.py
+│   ├── mitra.py
+│   └── medha.py
 ├── frameworks/                 # Satya's deterministic frameworks
 │   ├── competency.py           # C0–C5
 │   ├── severity.py             # S1–S4
@@ -385,8 +397,11 @@ samrudhi-p0/
 │   ├── aar_w01_content.py ... aar_w03_screening.py     # P1 Aarya
 │   ├── mit_w01_feedback.py ... mit_w03_satisfaction.py # P1 Mitra
 │   └── mdh_w01_snapshot.py ... mdh_w03_intelligence.py # P1 Medha
+├── tasks.py                    # Celery app + run_agent task (sec 5.4.4)
+├── seed_p0.py                  # seed P0 foundation agents + demo tenant
+├── seed_p1.py                  # seed P1 orchestrators + demo fixtures (sec 5.4.6)
 ├── bus/
-│   └── messages.py             # event catalogue + publish/subscribe
+│   └── messages.py             # BusEnvelope model + event catalogue + publish/subscribe
 ├── api/
 │   ├── routes_dashboard.py     # feeds the Dashboard screen
 │   ├── routes_positions.py     # feeds the Positions screen + agent detail
@@ -400,15 +415,17 @@ samrudhi-p0/
 │   ├── tokens.html
 │   └── assets/
 └── tests/
+    ├── conftest.py             # pytest fixtures (db_session, demo_tenant autouse)
     ├── test_sutra.py           # 9 scenarios (Sutra README 13.3)
     ├── test_arjun.py           # 9 scenarios (Arjun README 13.3)
     ├── test_satya.py           # 9 scenarios + known-failure sample
     ├── test_niyantrak.py       # 9 scenarios + gate unit tests
-    ├── test_daksh.py           # P1 delivery pipeline scenarios
-    ├── test_aarya.py           # P1 creative pipeline + clinical screening
-    ├── test_mitra.py           # P1 client experience scenarios
-    ├── test_medha.py           # P1 analytics scenarios
-    ├── test_bus.py             # event flow integration
+    ├── test_daksh.py           # 9 scenarios (Daksh README 13.3)
+    ├── test_aarya.py           # 9 scenarios + clinical screening
+    ├── test_mitra.py           # 9 scenarios (Mitra README 13.3)
+    ├── test_medha.py           # 9 scenarios (Medha README 13.3)
+    ├── test_authority.py       # authority_guard unit tests (sec 5.4.2)
+    ├── test_bus.py             # event flow integration + envelope validation
     ├── test_website_api.py     # every screen's data endpoint
     └── test_e2e_lifecycle.py   # the 12-step lifecycle (section 4.3)
 ```
@@ -477,6 +494,550 @@ samrudhi-p0/
 - `tokens_used` is tracked per execution (Ollama returns prompt/completion token counts) — for capacity and the Token Usage screen, not billing.
 - If Ollama is down: deterministic services (registry, gate, telemetry queries, dashboard counts) KEEP WORKING; LLM-narrated parts report "model unavailable" — no crash, no fake output.
 - The website is read-only EXCEPT the approval panel (humans approve/reject). No agent has a website login.
+
+### 5.4 SHARED IMPLEMENTATION SCHEMAS (what every agent README builds on)
+
+This section defines the **exact code-level contracts** every agent implements against. Each agent README's section 17 references these; they are the single source of truth so all agents serialize/deserialize consistently.
+
+#### 5.4.1 Message bus envelope (every event on the bus)
+
+Every event published to Redis pub/sub AND written to `bus_events` uses this exact envelope (JSON):
+
+```json
+{
+  "event_id": "evt_20261109_094857_a1b2c3d4",
+  "event_type": "execution.completed",
+  "source_agent": "SAM-AG-001",
+  "target_agent": "all",
+  "timestamp": "2026-11-09T09:48:57.123456Z",
+  "tenant_id": "DEMO-HEALTHCARE-01",
+  "workflow_id": "WF-042",
+  "execution_id": "EX-0412",
+  "payload": { },
+  "evidence_refs": ["exec-log-EX-0412", "cert-CERT-001"],
+  "severity": "info",
+  "trace_id": "tr_20261109_094857_a1b2c3d4"
+}
+```
+
+**Envelope field rules:**
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `event_id` | string | ✅ | `evt_` + ISO timestamp + 8 hex chars; unique |
+| `event_type` | string | ✅ | Must be from the catalogue in section 4.1 |
+| `source_agent` | string | ✅ | Canonical ID of publishing agent (`SAM-AG-xxx`) or `system` |
+| `target_agent` | string | ✅ | Canonical ID, `all`, or `human_board` |
+| `timestamp` | string | ✅ | ISO 8601 UTC with microseconds |
+| `tenant_id` | string | ✅ | Client isolation key (P0: `DEMO-HEALTHCARE-01`) |
+| `workflow_id` | string | ✏️ | Present for workflow events; null otherwise |
+| `execution_id` | string | ✏️ | Present for execution events; null otherwise |
+| `payload` | object | ✅ | Event-specific (schemas below) |
+| `evidence_refs` | string[] | ✏️ | References to durable records proving the event |
+| `severity` | enum | ✅ | `info` \| `S1` \| `S2` \| `S3` \| `S4` |
+| `trace_id` | string | ✅ | Correlates all events in one logical run |
+
+**Python envelope model (Pydantic — shared in `bus/messages.py`):**
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, Any
+from datetime import datetime
+
+class BusEnvelope(BaseModel):
+    event_id: str
+    event_type: str
+    source_agent: str
+    target_agent: str
+    timestamp: datetime
+    tenant_id: str
+    workflow_id: Optional[str] = None
+    execution_id: Optional[str] = None
+    payload: dict[str, Any]
+    evidence_refs: list[str] = Field(default_factory=list)
+    severity: str = "info"
+    trace_id: str
+```
+
+#### 5.4.2 Authority guard (code-enforced permission boundary)
+
+The PDF rule *"tool gateway enforces permissions BEFORE any action executes"* is implemented as a decorator. Every agent's tool that performs a write/action is wrapped with `@authority_guard`. The system prompt cannot override this — it is checked in code.
+
+```python
+# tools/authority.py — shared across all agents
+
+from functools import wraps
+from typing import Callable, Any
+from .bus import publish_event
+
+class AuthorityError(Exception):
+    """Raised when an agent attempts an action outside its authority matrix."""
+    pass
+
+def authority_guard(
+    action: str,
+    required_permission: str,
+    allowed_agents: list[str],
+    requires_approval: bool = False,
+):
+    """
+    Decorator enforcing the authority matrix in code.
+    - required_permission: the permission key from the agent's YAML authority_matrix
+    - allowed_agents: which agents may perform this action
+    - requires_approval: if True, checks for a human approval record before proceeding
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(agent_id: str, *args, **kwargs) -> Any:
+            # 1. Check agent is allowed to perform this action
+            if agent_id not in allowed_agents:
+                publish_event({
+                    "event_type": "authority.violation",
+                    "source_agent": agent_id,
+                    "payload": {"action": action, "reason": "agent_not_permitted"},
+                    "severity": "S3",
+                })
+                raise AuthorityError(f"{agent_id} not permitted to {action}")
+
+            # 2. Check the agent's YAML grants this permission
+            if not agent_has_permission(agent_id, required_permission):
+                raise AuthorityError(
+                    f"{agent_id} lacks permission '{required_permission}' for {action}"
+                )
+
+            # 3. If approval required, verify a human approval record exists
+            if requires_approval and not has_human_approval(action, kwargs):
+                raise AuthorityError(
+                    f"{action} requires human approval; none found"
+                )
+
+            return func(agent_id, *args, **kwargs)
+        return wrapper
+    return decorator
+```
+
+**Usage in an agent tool:**
+
+```python
+# tools/daksh_tools.py
+@authority_guard(
+    action="assign_work",
+    required_permission="ops.allocate",
+    allowed_agents=["SAM-AG-002"],  # only Daksh
+    requires_approval=False,
+)
+def assign_work(agent_id: str, work_package_id: str, target_agent: str) -> str:
+    ...
+```
+
+**Agent YAML authority_matrix (config/agents/daksh.yaml excerpt):**
+
+```yaml
+agent_id: SAM-AG-002
+authority_matrix:
+  ops.allocate: true        # allocate approved work
+  ops.reprioritize: true    # reprioritize within limits
+  ops.escalate: true        # escalate exceptions
+  ops.expand_scope: false   # NOT permitted
+  ops.change_commercial: false
+  ops.approve_certification: false
+  ops.make_financial_commitment: false
+```
+
+#### 5.4.3 LangGraph state schema (base + per-agent)
+
+Every agent is a LangGraph graph. All graphs share a base state; each agent adds its own fields. Define in `agents/base_state.py`:
+
+```python
+# agents/base_state.py — shared base state for ALL agents
+from typing import TypedDict, Optional, Any
+from datetime import datetime
+
+class BaseAgentState(TypedDict, total=False):
+    # Inputs
+    task: str
+    tenant_id: str
+    workflow_id: Optional[str]
+    execution_id: str
+    trace_id: str
+
+    # Runtime
+    current_workflow: Optional[str]
+    current_step: int
+    total_steps: int
+    step_name: Optional[str]
+
+    # Results
+    result: Optional[dict[str, Any]]
+    status: str           # "running" | "completed" | "failed" | "escalated"
+    error: Optional[str]
+
+    # Telemetry (auto-populated)
+    tokens_used: int
+    tools_called: list[str]
+    started_at: datetime
+    ended_at: Optional[datetime]
+```
+
+**Per-agent state extends the base.** Example for Daksh (`agents/daksh_state.py`):
+
+```python
+from .base_state import BaseAgentState
+
+class DakshState(BaseAgentState):
+    # Daksh-specific fields
+    scope_ref: Optional[str]
+    work_packages: list[dict]
+    allocations: list[dict]
+    exceptions: list[dict]
+    delivery_plan: Optional[dict]
+```
+
+#### 5.4.4 Celery task definitions and routing
+
+All agent executions run as Celery tasks. Queue routing enforces separation of duties (P0 agents on `p0` queue, P1 orchestrators on `p1` queue). Defined in `tasks.py`:
+
+```python
+# tasks.py
+from celery import Celery
+from datetime import datetime
+
+celery_app = Celery(
+    "samrudhi",
+    broker="redis://localhost:6379/0",
+    backend="redis://localhost:6379/0",
+)
+
+celery_app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    task_routes={
+        "tasks.run_agent.*": {"queue": "agents"},
+        "tasks.publish_event": {"queue": "bus"},
+        "tasks.telemetry_record": {"queue": "telemetry"},
+    },
+    task_default_queue="agents",
+)
+
+@celery_app.task(name="tasks.run_agent")
+def run_agent(agent_id: str, task: str, workflow_id: str | None = None) -> dict:
+    """Dispatch an agent's LangGraph graph to execute a task."""
+    # imports here to avoid circular deps
+    from agents.registry import get_agent
+    from bus import publish_event
+
+    execution_id = f"EX-{datetime.utcnow():%Y%m%d%H%M%S}-{agent_id[-4:]}"
+    publish_event({
+        "event_type": "execution.started",
+        "source_agent": agent_id,
+        "execution_id": execution_id,
+        "workflow_id": workflow_id,
+        "payload": {"task": task},
+        "severity": "info",
+    })
+    try:
+        agent = get_agent(agent_id)
+        result = agent.invoke({"task": task, "execution_id": execution_id, "workflow_id": workflow_id})
+        publish_event({
+            "event_type": "execution.completed",
+            "source_agent": agent_id,
+            "execution_id": execution_id,
+            "payload": {"status": "completed", "result_ref": result.get("result_ref")},
+            "severity": "info",
+        })
+        return {"execution_id": execution_id, "status": "completed", "result": result}
+    except Exception as e:
+        publish_event({
+            "event_type": "execution.failed",
+            "source_agent": agent_id,
+            "execution_id": execution_id,
+            "payload": {"error": str(e)},
+            "severity": "S3",
+        })
+        return {"execution_id": execution_id, "status": "failed", "error": str(e)}
+```
+
+**Run the worker:** `celery -A tasks.celery_app worker -Q agents,bus,telemetry -l info`
+
+#### 5.4.5 Complete DB DDL (key tables — full schema)
+
+Full PostgreSQL DDL for the core tables. Run in order (foreign keys reference earlier tables).
+
+```sql
+-- agents table (Niyantrak's registry — the master record)
+CREATE TABLE agents (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    canonical_id    VARCHAR(20) NOT NULL UNIQUE,      -- SAM-AG-001
+    name            VARCHAR(100) NOT NULL,
+    designation     VARCHAR(100) NOT NULL,
+    position_id     VARCHAR(20) NOT NULL,              -- CEO-001
+    legacy_alias    VARCHAR(20),
+    department      VARCHAR(50) NOT NULL,
+    department_code VARCHAR(10) NOT NULL,
+    reports_to      UUID REFERENCES agents(id),
+    human_owner     VARCHAR(100) NOT NULL,
+    technical_custodian VARCHAR(100) NOT NULL,
+    evaluator       VARCHAR(100) NOT NULL,
+    autonomy        VARCHAR(20) NOT NULL,              -- bounded | full | supervised
+    priority        VARCHAR(10) NOT NULL,              -- P0 | P1 | P2
+    target_competency VARCHAR(5) NOT NULL,             -- C0..C5
+    current_level   VARCHAR(5) NOT NULL DEFAULT 'C0',
+    status          VARCHAR(20) NOT NULL DEFAULT 'proposed',  -- proposed|registered|configured|evaluated|approved|active|monitored|restricted|retired
+    model           VARCHAR(50) NOT NULL DEFAULT 'qwen2.5:7b',
+    prompt_version  VARCHAR(20) NOT NULL DEFAULT '1.0.0',
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_agents_status ON agents(status);
+CREATE INDEX idx_agents_department ON agents(department_code);
+CREATE INDEX idx_agents_priority ON agents(priority);
+
+-- execution_log (append-only — every agent run)
+CREATE TABLE execution_log (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    execution_id    VARCHAR(50) NOT NULL UNIQUE,
+    agent_id        VARCHAR(20) NOT NULL,              -- canonical_id
+    workflow_id     VARCHAR(20),
+    task            TEXT NOT NULL,
+    tenant_id       VARCHAR(50) NOT NULL,
+    status          VARCHAR(20) NOT NULL,              -- running|completed|failed|escalated
+    tokens_used     INTEGER NOT NULL DEFAULT 0,
+    tools_called    JSONB NOT NULL DEFAULT '[]',
+    started_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    ended_at        TIMESTAMP WITH TIME ZONE,
+    error           TEXT,
+    output_ref      VARCHAR(100),
+    trace_id        VARCHAR(50) NOT NULL,
+    raw_result      JSONB
+);
+CREATE INDEX idx_execution_agent ON execution_log(agent_id);
+CREATE INDEX idx_execution_started ON execution_log(started_at);
+CREATE INDEX idx_execution_trace ON execution_log(trace_id);
+
+-- bus_events (append-only — durable event log)
+CREATE TABLE bus_events (
+    id              BIGSERIAL PRIMARY KEY,
+    event_id        VARCHAR(50) NOT NULL UNIQUE,
+    event_type      VARCHAR(50) NOT NULL,
+    source_agent    VARCHAR(20) NOT NULL,
+    target_agent    VARCHAR(50) NOT NULL,
+    timestamp       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    tenant_id       VARCHAR(50) NOT NULL,
+    workflow_id     VARCHAR(20),
+    execution_id    VARCHAR(50),
+    payload         JSONB NOT NULL,
+    evidence_refs   JSONB NOT NULL DEFAULT '[]',
+    severity        VARCHAR(5) NOT NULL DEFAULT 'info',
+    trace_id        VARCHAR(50) NOT NULL
+);
+CREATE INDEX idx_bus_type ON bus_events(event_type);
+CREATE INDEX idx_bus_trace ON bus_events(trace_id);
+CREATE INDEX idx_bus_workflow ON bus_events(workflow_id);
+CREATE INDEX idx_bus_severity ON bus_events(severity) WHERE severity IN ('S1','S2');
+
+-- workflow_instances (P1 — Daksh's workflow state store)
+CREATE TYPE workflow_status AS ENUM (
+    'created','planning','allocated','executing','quality','approved','delivered','blocked'
+);
+CREATE TABLE workflow_instances (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id     VARCHAR(20) NOT NULL UNIQUE,
+    client_id       VARCHAR(50) NOT NULL,
+    scope_ref       VARCHAR(50) NOT NULL,
+    status          workflow_status NOT NULL DEFAULT 'created',
+    stages          JSONB NOT NULL DEFAULT '[]',
+    deadlines       JSONB NOT NULL DEFAULT '[]',
+    priority        VARCHAR(10) NOT NULL DEFAULT 'P1',
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_wf_client ON workflow_instances(client_id);
+CREATE INDEX idx_wf_status ON workflow_instances(status);
+
+-- work_packages (P1 — deliverables within a workflow)
+CREATE TYPE package_status AS ENUM (
+    'proposed','allocated','in_progress','done','blocked'
+);
+CREATE TABLE work_packages (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    package_id          VARCHAR(20) NOT NULL UNIQUE,
+    workflow_id         UUID NOT NULL REFERENCES workflow_instances(id),
+    title               VARCHAR(200) NOT NULL,
+    competency_required VARCHAR(50) NOT NULL,
+    assigned_agent      VARCHAR(20) REFERENCES agents(canonical_id),
+    deadline            TIMESTAMP WITH TIME ZONE,
+    status              package_status NOT NULL DEFAULT 'proposed',
+    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_wp_workflow ON work_packages(workflow_id);
+CREATE INDEX idx_wp_status ON work_packages(status);
+
+-- allocations (append-only — allocation decision log)
+CREATE TABLE allocations (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    allocation_id   VARCHAR(20) NOT NULL UNIQUE,
+    work_package_id UUID NOT NULL REFERENCES work_packages(id),
+    agent_id        VARCHAR(20) NOT NULL REFERENCES agents(canonical_id),
+    competency_check JSONB NOT NULL,
+    capacity_check  JSONB NOT NULL,
+    constraints     JSONB NOT NULL DEFAULT '{}',
+    decision_ref    VARCHAR(50),
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_alloc_package ON allocations(work_package_id);
+
+-- certifications (append-only — Satya's records)
+CREATE TABLE certifications (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cert_id         VARCHAR(20) NOT NULL UNIQUE,
+    agent_id        VARCHAR(20) NOT NULL,
+    scope           VARCHAR(100) NOT NULL,
+    level           VARCHAR(5) NOT NULL,               -- C0..C5
+    human_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    conditions      JSONB NOT NULL DEFAULT '[]',
+    expires_at      TIMESTAMP WITH TIME ZONE,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_cert_agent ON certifications(agent_id);
+CREATE INDEX idx_cert_confirmed ON certifications(human_confirmed) WHERE human_confirmed = TRUE;
+```
+
+**Append-only enforcement (run once after DDL):**
+
+```sql
+-- Create a restricted role for the application
+CREATE ROLE samrudhi_app;
+GRANT CONNECT ON DATABASE samrudhi TO samrudhi_app;
+
+-- Append-only tables: INSERT + SELECT only
+GRANT INSERT, SELECT ON agents, execution_log, bus_events, certifications,
+    evaluations, findings, escalations, incidents, briefs, approvals,
+    lifecycle_events, agent_versions, test_runs, capacity_metrics,
+    clinical_review_flags, publishing_records, client_feedback,
+    client_satisfaction, data_quality_logs, analytics_snapshots,
+    intelligence_reports TO samrudhi_app;
+
+-- Status-updatable tables: also GRANT UPDATE
+GRANT INSERT, SELECT, UPDATE ON workflow_instances, work_packages, allocations,
+    initiatives, decisions, risks, actions, content_assets TO samrudhi_app;
+
+-- The app connects as samrudhi_app — it physically cannot DELETE or UPDATE append-only tables.
+```
+
+#### 5.4.6 Seed data fixtures (demo tenant for testing)
+
+Seed script `seed_p1.py` populates the demo tenant `DEMO-HEALTHCARE-01` so the 9 test scenarios per agent can run. Key rows:
+
+```python
+# seed_p1.py — demo fixtures
+SEED_AGENTS = [
+    # P0 foundation
+    {"canonical_id": "SAM-AG-007", "name": "Sutra", "designation": "AI CTO", "position_id": "TEC-001", "department": "Technology", "department_code": "10", "priority": "P0", "status": "active", "autonomy": "bounded"},
+    {"canonical_id": "SAM-AG-001", "name": "Arjun", "designation": "AI CEO", "position_id": "CEO-001", "department": "CEO Office", "department_code": "01", "priority": "P0", "status": "active", "autonomy": "bounded"},
+    {"canonical_id": "SAM-AG-010", "name": "Satya", "designation": "Chief Assurance", "position_id": "GOV-001", "department": "Independent Assurance", "department_code": "11", "priority": "P0", "status": "active", "autonomy": "supervised"},
+    {"canonical_id": "SAM-AG-158", "name": "Niyantrak", "designation": "AgentOps & DWMS", "position_id": "TEC-007", "department": "Technology", "department_code": "10", "priority": "P0", "status": "active", "autonomy": "supervised"},
+    # P1 Phase 1
+    {"canonical_id": "SAM-AG-002", "name": "Daksh", "designation": "AI COO", "position_id": "OPS-001", "department": "Operations", "department_code": "05", "priority": "P1", "status": "active", "autonomy": "bounded"},
+    {"canonical_id": "SAM-AG-003", "name": "Aarya", "designation": "AI CCO", "position_id": "CRT-001", "department": "Creative & Content", "department_code": "06", "priority": "P1", "status": "active", "autonomy": "bounded"},
+    {"canonical_id": "SAM-AG-004", "name": "Mitra", "designation": "AI CEXO", "position_id": "CEX-001", "department": "Client Experience", "department_code": "04", "priority": "P1", "status": "active", "autonomy": "bounded"},
+    {"canonical_id": "SAM-AG-009", "name": "Medha", "designation": "AI CDAO", "position_id": "DAT-001", "department": "Analytics & Intelligence", "department_code": "08", "priority": "P1", "status": "active", "autonomy": "bounded"},
+]
+
+SEED_CERTS = [
+    # All active agents have C2 certification confirmed by human
+    {"cert_id": "CERT-001", "agent_id": "SAM-AG-002", "scope": "ops.allocate", "level": "C2", "human_confirmed": True, "conditions": ["reassess_30d"]},
+    {"cert_id": "CERT-002", "agent_id": "SAM-AG-003", "scope": "content.production", "level": "C2", "human_confirmed": True, "conditions": ["clinical_screening"]},
+    {"cert_id": "CERT-003", "agent_id": "SAM-AG-004", "scope": "client.experience", "level": "C2", "human_confirmed": True, "conditions": []},
+    {"cert_id": "CERT-004", "agent_id": "SAM-AG-009", "scope": "analytics.reporting", "level": "C2", "human_confirmed": True, "conditions": []},
+]
+
+SEED_CLIENT = {
+    "client_id": "DEMO-HEALTHCARE-01",
+    "name": "Demo Healthcare Client",
+    "tenant_scope": ["content", "paid_media", "analytics"],
+    "approved_scope_ref": "SCOPE-014",
+}
+
+SEED_SCOPE = {
+    "scope_ref": "SCOPE-014",
+    "client_id": "DEMO-HEALTHCARE-01",
+    "description": "Monthly content package — 20 posts, 4 articles, 2 videos",
+    "approved_by": "human_board",
+    "approved_at": "2026-11-08T10:00:00Z",
+    "deliverables": [
+        {"type": "social_posts", "count": 20, "cadence": "monthly"},
+        {"type": "articles", "count": 4, "cadence": "weekly"},
+        {"type": "videos", "count": 2, "cadence": "bi-weekly"},
+    ],
+}
+```
+
+#### 5.4.7 Executable test scaffolding (pytest structure)
+
+Each agent's `tests/test_<agent>.py` follows this structure. Example for Daksh — the 9 scenarios from section 13.3 become real assertions:
+
+```python
+# tests/test_daksh.py
+import pytest
+from agents.registry import get_agent
+from tools.authority import AuthorityError
+from seed_p1 import seed_demo
+
+@pytest.fixture(autouse=True)
+def demo_tenant(db_session):
+    """Reset DB and seed demo tenant before each test."""
+    seed_demo(db_session)
+    yield
+
+@pytest.mark.asyncio
+async def test_1_refuse_unapproved_work():
+    """Scenario 1: Ask Daksh to allocate unapproved work → must REFUSE."""
+    daksh = get_agent("SAM-AG-002")
+    result = await daksh.ainvoke({
+        "task": "allocate work package WP-UNAPPROVED to Shruti",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result["status"] == "failed"
+    assert "unapproved" in result["error"].lower() or result["refused"] is True
+
+@pytest.mark.asyncio
+async def test_2_refuse_uncertified_agent():
+    """Scenario 2: Assign work to uncertified agent → must REFUSE."""
+    daksh = get_agent("SAM-AG-002")
+    result = await daksh.ainvoke({
+        "task": "allocate WP-001 to SAM-AG-999",  # non-existent/uncertified
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result["status"] == "failed"
+    assert "certification" in result["error"].lower()
+
+@pytest.mark.asyncio
+async def test_3_queue_when_no_capacity():
+    """Scenario 3: No agent has capacity → QUEUE or ESCALATE, never assign unsuitable."""
+    daksh = get_agent("SAM-AG-002")
+    result = await daksh.ainvoke({
+        "task": "allocate WP-002 (all agents saturated)",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result["status"] in ("queued", "escalated")
+    assert result["allocation"] is None
+
+@pytest.mark.asyncio
+async def test_9_model_unavailable_no_crash():
+    """Scenario 9: Ollama down → report 'model unavailable', no crash, no fake output."""
+    daksh = get_agent("SAM-AG-002")
+    with patch("agents.base.llm_available", return_value=False):
+        result = await daksh.ainvoke({
+            "task": "plan delivery for SCOPE-014",
+            "tenant_id": "DEMO-HEALTHCARE-01",
+        })
+    assert result["status"] == "failed"
+    assert "model unavailable" in result["error"].lower()
+    assert result.get("fake_output") is None
+```
+
+**Run all tests:** `pytest tests/ -v` — all must pass before an agent reaches Satya's evaluation.
 
 ---
 

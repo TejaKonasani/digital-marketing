@@ -750,7 +750,7 @@ NIYANTRAK (workforce insights)
 
 ## 17. BUILD INSTRUCTIONS (for the AI coding agent)
 
-Give this section to the coding agent. It defines exactly what to build.
+Give this section to the coding agent. It defines exactly what to build — including exact tool schemas, state schema, DB DDL, Celery tasks, and test scaffolding. **Shared schemas (bus envelope, authority guard, base state, Celery routing, core DDL, seed fixtures) are defined in `P0_Architecture_5.md` section 5.4 — build against those, do not redefine.**
 
 ### 17.1 Stack (all local, zero cost)
 
@@ -777,12 +777,16 @@ Give this section to the coding agent. It defines exactly what to build.
 ```
 samrudhi-p1/
 ├── agents/
-│   └── medha.py                # Medha's LangGraph agent
+│   ├── base_state.py           # BaseAgentState TypedDict (shared — see arch sec 5.4.3)
+│   ├── registry.py             # get_agent(agent_id) factory
+│   ├── medha_state.py          # MedhaState extends BaseAgentState
+│   └── medha.py                # Medha's LangGraph graph
 ├── config/
 │   └── agents/
-│       └── medha.yaml          # model, tools, limits, authority matrix
+│       └── medha.yaml          # model, tools, limits, authority_matrix
 ├── tools/
-│   └── medha_tools.py          # the 15 tools from section 11
+│   ├── authority.py            # authority_guard decorator (shared — see arch sec 5.4.2)
+│   └── medha_tools.py          # the 15 tools from section 11 (schemas below)
 ├── analytics/
 │   ├── data_integration.py     # MED-W01: collection + reconciliation
 │   ├── metric_governance.py    # MED-W02: metric definitions + validation
@@ -790,9 +794,9 @@ samrudhi-p1/
 │   ├── forecasting.py          # MED-W04: forecasts + decision support
 │   └── workforce_analytics.py  # MED-W05: digital workforce metrics
 ├── models/
-│   ├── metric_definition.py    # measurement contract
-│   ├── data_quality.py         # quality scores
-│   ├── forecast.py             # forecasts + predictions
+│   ├── metric_definition.py    # measurement contract (DDL below)
+│   ├── data_quality.py         # quality scores (DDL below)
+│   ├── forecast.py             # forecasts + predictions (DDL below)
 │   ├── decision.py             # recommendations + confidence
 │   └── data_lineage.py         # source → transformation → report
 ├── workflows/
@@ -801,77 +805,481 @@ samrudhi-p1/
 │   ├── med_w03_reporting.py
 │   ├── med_w04_forecasting.py
 │   └── med_w05_workforce.py
+├── tasks.py                    # Celery run_agent task (shared — see arch sec 5.4.4)
 ├── bus/
-│   └── messages.py             # shared P0/P1 message protocol
+│   └── messages.py             # BusEnvelope model + publish/subscribe (shared — arch sec 5.4.1)
 └── tests/
-    └── test_medha.py           # the 9 scenarios (section 13.3)
+    ├── conftest.py             # pytest fixtures (db_session, demo_tenant autouse)
+    └── test_medha.py           # the 9 scenarios (section 13.3) — scaffolding below
 ```
 
-### 17.3 Medha's database tables
+### 17.3 Medha's LangGraph state (`agents/medha_state.py`)
+
+Extends `BaseAgentState` from the shared base. Define exactly:
+
+```python
+# agents/medha_state.py
+from typing import TypedDict, Optional, Any
+from agents.base_state import BaseAgentState
+
+class MedhaState(BaseAgentState):
+    # MEDHA-SPECIFIC FIELDS
+    metric_id: Optional[str]                 # input: metric reference
+    snapshots: list[dict[str, Any]]          # analytics snapshots generated
+    quality_alerts: list[dict[str, Any]]     # data quality issues detected
+    forecasts: list[dict[str, Any]]          # forecasts produced
+    intelligence_reports: list[dict[str, Any]]  # reports generated
+    handoff_events: list[str]                # bus event_ids emitted (for audit)
+```
+
+### 17.4 Medha's database tables (full SQLAlchemy models + DDL)
 
 **`metric_definitions`** (the measurement contract — append-only version history)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Metric ID |
-| name | VARCHAR | Metric name |
-| definition | TEXT | Standard definition |
-| formula | TEXT | Calculation rule |
-| data_source | JSON | Where the data comes from |
-| validation_rule | JSON | How data quality is checked |
-| owner | VARCHAR | Metric owner |
-| version | VARCHAR | Version number |
-| last_validated | TIMESTAMP | When last validated |
-| created_at / updated_at | TIMESTAMP | |
+```python
+# models/metric_definition.py
+from sqlalchemy import Column, String, Text, JSON, DateTime, Boolean, func
+from sqlalchemy.dialects.postgresql import UUID
+from models.base import Base
+
+class MetricDefinition(Base):
+    __tablename__ = "metric_definitions"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    metric_id = Column(String(30), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    definition = Column(Text, nullable=False)
+    formula = Column(Text, nullable=False)
+    data_source = Column(JSON, nullable=False, default=dict)
+    validation_rule = Column(JSON, nullable=False, default=dict)
+    owner = Column(String(50), nullable=False)
+    version = Column(String(10), nullable=False, default="1.0.0")
+    last_validated = Column(DateTime(timezone=True))
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+```
 
 **`data_quality`** (append-only quality tracking)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Quality record ID |
-| metric_id | UUID (FK) | Metric |
-| completeness | NUMERIC | % complete |
-| accuracy | NUMERIC | % accurate |
-| timeliness | NUMERIC | % current |
-| consistency | NUMERIC | % consistent |
-| validity | NUMERIC | % valid |
-| uniqueness | NUMERIC | % unique |
-| overall_score | NUMERIC | Weighted average |
-| status | ENUM | pass / fail / warning |
-| recorded_at | TIMESTAMP | |
+```python
+# models/data_quality.py
+class QualityStatus:
+    PASS = "pass"
+    FAIL = "fail"
+    WARNING = "warning"
+
+class DataQuality(Base):
+    __tablename__ = "data_quality"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    quality_id = Column(String(20), unique=True, nullable=False, index=True)
+    metric_id = Column(String(30), ForeignKey("metric_definitions.metric_id"), nullable=False, index=True)
+    completeness = Column(Numeric(5, 2), nullable=False)
+    accuracy = Column(Numeric(5, 2), nullable=False)
+    timeliness = Column(Numeric(5, 2), nullable=False)
+    consistency = Column(Numeric(5, 2), nullable=False)
+    validity = Column(Numeric(5, 2), nullable=False)
+    uniqueness = Column(Numeric(5, 2), nullable=False)
+    overall_score = Column(Numeric(5, 2), nullable=False)
+    status = Column(String(20), nullable=False, default=QualityStatus.PASS)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+```
 
 **`forecasts`** (append-only forecasting records)
 
-| Column | Type | Description |
-|---|---|---|
-| id | UUID (PK) | Forecast ID |
-| metric_id | UUID (FK) | Metric |
-| forecast_value | NUMERIC | Predicted value |
-| confidence | NUMERIC | Confidence level (0–100) |
-| error_bounds | JSON | Lower/upper bounds |
-| trend | VARCHAR | increasing/decreasing/stable |
-| early_warning | BOOLEAN | Critical trend detected |
-| recorded_at | TIMESTAMP | |
+```python
+# models/forecast.py
+class Trend:
+    INCREASING = "increasing"
+    DECREASING = "decreasing"
+    STABLE = "stable"
 
-### 17.4 Medha's tools (implementation spec)
+class Forecast(Base):
+    __tablename__ = "forecasts"
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    forecast_id = Column(String(20), unique=True, nullable=False, index=True)
+    metric_id = Column(String(30), ForeignKey("metric_definitions.metric_id"), nullable=False, index=True)
+    forecast_value = Column(Numeric(12, 4), nullable=False)
+    confidence = Column(Numeric(5, 2), nullable=False)  # 0–100
+    error_bounds = Column(JSON, nullable=False, default=dict)  # {lower, upper}
+    trend = Column(String(20), nullable=False, default=Trend.STABLE)
+    early_warning = Column(Boolean, nullable=False, default=False)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+```
 
-See section 11 for the list. Implementation rules:
-- Every tool call logged to `execution_log` (agent_id, tool, input hash, output ref, tokens).
-- `define_metric` writes to `metric_definitions` table with version history (append-only).
-- `clean_data` validates against data quality framework — records quality scores.
-- `forecast` writes to `forecasts` table with confidence levels.
-- Tenant isolation enforced on all data queries — cross-tenant access refused.
-- Missing/stale data → report "unavailable" — never fabricate numbers.
+**`analytics_snapshots`** + **`intelligence_reports`** + **`data_quality_logs`** — full DDL (run before seeding):
 
-### 17.5 Medha's system prompt
+```sql
+CREATE TYPE quality_status AS ENUM ('pass','fail','warning');
+CREATE TABLE metric_definitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  metric_id VARCHAR(30) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  definition TEXT NOT NULL,
+  formula TEXT NOT NULL,
+  data_source JSONB NOT NULL DEFAULT '{}',
+  validation_rule JSONB NOT NULL DEFAULT '{}',
+  owner VARCHAR(50) NOT NULL,
+  version VARCHAR(10) NOT NULL DEFAULT '1.0.0',
+  last_validated TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_metric_id ON metric_definitions(metric_id);
 
-Use the full system prompt from **section 10** verbatim.
+CREATE TABLE data_quality (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quality_id VARCHAR(20) NOT NULL UNIQUE,
+  metric_id VARCHAR(30) NOT NULL REFERENCES metric_definitions(metric_id),
+  completeness NUMERIC(5,2) NOT NULL,
+  accuracy NUMERIC(5,2) NOT NULL,
+  timeliness NUMERIC(5,2) NOT NULL,
+  consistency NUMERIC(5,2) NOT NULL,
+  validity NUMERIC(5,2) NOT NULL,
+  uniqueness NUMERIC(5,2) NOT NULL,
+  overall_score NUMERIC(5,2) NOT NULL,
+  status quality_status NOT NULL DEFAULT 'pass',
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_dq_metric ON data_quality(metric_id);
 
-### 17.6 Test Medha before going live
+CREATE TYPE trend AS ENUM ('increasing','decreasing','stable');
+CREATE TABLE forecasts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  forecast_id VARCHAR(20) NOT NULL UNIQUE,
+  metric_id VARCHAR(30) NOT NULL REFERENCES metric_definitions(metric_id),
+  forecast_value NUMERIC(12,4) NOT NULL,
+  confidence NUMERIC(5,2) NOT NULL,
+  error_bounds JSONB NOT NULL DEFAULT '{}',
+  trend trend NOT NULL DEFAULT 'stable',
+  early_warning BOOLEAN NOT NULL DEFAULT FALSE,
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_forecast_metric ON forecasts(metric_id);
 
-See section 13.3 — the 9 scenarios. All must pass before Satya's evaluation and human activation.
+-- analytics_snapshots (append-only — see arch sec 5.2)
+CREATE TABLE analytics_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_id VARCHAR(20) NOT NULL UNIQUE,
+  period VARCHAR(20) NOT NULL,           -- today | weekly | monthly
+  metrics JSONB NOT NULL DEFAULT '{}',
+  client_id VARCHAR(50),
+  generated_by VARCHAR(20) NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_snapshot_period ON analytics_snapshots(period);
 
-### 17.7 Out of scope (Medha does NOT do these)
+-- intelligence_reports (append-only — see arch sec 5.2)
+CREATE TABLE intelligence_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_id VARCHAR(20) NOT NULL UNIQUE,
+  period VARCHAR(20) NOT NULL,
+  findings JSONB NOT NULL DEFAULT '[]',
+  recommendations JSONB NOT NULL DEFAULT '[]',
+  confidence NUMERIC(5,2),
+  generated_by VARCHAR(20) NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- data_quality_logs (append-only — alerts)
+CREATE TABLE data_quality_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_id VARCHAR(20) NOT NULL UNIQUE,
+  source VARCHAR(50) NOT NULL,
+  severity VARCHAR(5) NOT NULL DEFAULT 'S3',
+  detail JSONB NOT NULL DEFAULT '{}',
+  acknowledged BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+### 17.5 Medha's tools (exact Pydantic schemas)
+
+Every tool is a function decorated with `@authority_guard`. Input/output use these exact Pydantic models. Defined in `tools/medha_tools.py`:
+
+```python
+# tools/medha_tools.py
+from pydantic import BaseModel, Field
+from typing import Optional, Any
+from tools.authority import authority_guard
+
+# --- Input schemas ---
+class DefineMetricIn(BaseModel):
+    metric_id: str
+    name: str
+    definition: str
+    formula: str
+    data_source: dict[str, Any]
+    validation_rule: dict[str, Any]
+    owner: str
+
+class CollectDataIn(BaseModel):
+    metric_id: str
+    period: str
+    tenant_id: str
+
+class ValidateDataIn(BaseModel):
+    metric_id: str
+    records: list[dict[str, Any]]
+
+class CleanDataIn(BaseModel):
+    metric_id: str
+    records: list[dict[str, Any]]
+
+class GenerateSnapshotIn(BaseModel):
+    period: str = Field(..., description="today | weekly | monthly")
+    client_id: Optional[str] = None
+
+class ForecastMetricIn(BaseModel):
+    metric_id: str
+    horizon: int = Field(..., description="number of periods to forecast")
+    confidence_threshold: float = 70.0
+
+class GenerateIntelligenceReportIn(BaseModel):
+    period: str
+    scope: list[str] = Field(default_factory=list)
+
+class GetDataQualityIn(BaseModel):
+    metric_id: str
+
+class GetWorkforceMetricsIn(BaseModel):
+    period: str
+
+# --- Output schemas ---
+class MetricDefinitionRecord(BaseModel):
+    metric_id: str
+    name: str
+    version: str
+    created: bool
+
+class DataQualityResult(BaseModel):
+    metric_id: str
+    completeness: float
+    accuracy: float
+    timeliness: float
+    consistency: float
+    validity: float
+    uniqueness: float
+    overall_score: float
+    status: str
+
+class SnapshotRecord(BaseModel):
+    snapshot_id: str
+    period: str
+    metrics: dict
+    generated_at: str
+
+class ForecastRecord(BaseModel):
+    forecast_id: str
+    metric_id: str
+    forecast_value: float
+    confidence: float
+    error_bounds: dict
+    trend: str
+    early_warning: bool
+
+class IntelligenceReport(BaseModel):
+    report_id: str
+    period: str
+    findings: list[dict]
+    recommendations: list[dict]
+    confidence: Optional[float]
+
+class WorkforceMetrics(BaseModel):
+    period: str
+    total_agents: int
+    active_agents: int
+    total_tokens: int
+    avg_execution_time: float
+    success_rate: float
+```
+
+**Tool implementations — key guard rules:**
+
+```python
+@authority_guard(action="define_metric", required_permission="data.define", allowed_agents=["SAM-AG-009"])
+def define_metric(inp: DefineMetricIn) -> MetricDefinitionRecord:
+    # Writes to metric_definitions with version history (append-only)
+    # Increments version on re-define; never overwrites prior version
+    ...
+
+@authority_guard(action="forecast", required_permission="data.forecast", allowed_agents=["SAM-AG-009"])
+def forecast(inp: ForecastMetricIn) -> ForecastRecord:
+    # Writes to forecasts table with confidence levels
+    # Missing/stale input data → return forecast_value=None, error="data_unavailable"
+    ...
+```
+
+### 17.6 Medha's authority_matrix (`config/agents/medha.yaml`)
+
+```yaml
+agent_id: SAM-AG-009
+name: Medha
+model: qwen2.5:7b
+system_prompt_ref: section_10
+tools:
+  - define_metric
+  - collect_data
+  - validate_data
+  - clean_data
+  - generate_snapshot
+  - forecast
+  - generate_intelligence_report
+  - get_data_quality
+  - get_workforce_metrics
+authority_matrix:
+  data.define: true
+  data.collect: true
+  data.validate: true
+  data.clean: true
+  data.snapshot: true
+  data.forecast: true
+  data.report: true
+  data.decide: false        # NEVER — recommendations only, executives decide
+  data.change_metric_def: false  # version history only, no overwrite
+limits:
+  max_metrics_per_run: 50
+  token_budget_per_run: 200000
+```
+
+### 17.7 Medha's Celery task wiring
+
+Medha runs via the shared `tasks.run_agent` task (arch sec 5.4.4). Register the agent:
+
+```python
+# agents/registry.py
+from agents.medha import build_medha_graph
+
+AGENT_FACTORIES = {
+    "SAM-AG-009": build_medha_graph,
+    # ... other agents
+}
+```
+
+### 17.8 Test scaffolding (`tests/test_medha.py`)
+
+The 9 scenarios from section 13.3 as executable pytest. Full scaffolding:
+
+```python
+# tests/test_medha.py
+import pytest
+from unittest.mock import patch
+from agents.registry import get_agent
+from seed_p1 import seed_demo
+
+@pytest.fixture(autouse=True)
+def demo_tenant(db_session):
+    seed_demo(db_session)
+    yield
+
+@pytest.mark.asyncio
+async def test_1_refuse_business_decision():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "decide to cut budget for DEMO-HEALTHCARE-01",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+    assert "decision" in result.get("error", "").lower()
+
+@pytest.mark.asyncio
+async def test_2_define_metric():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "define metric ENGAGEMENT_RATE with formula likes+comments/impressions",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("created") is True
+    assert result.get("version") == "1.0.0"
+
+@pytest.mark.asyncio
+async def test_3_version_metric_no_overwrite():
+    medha = get_agent("SAM-AG-009")
+    r1 = await medha.ainvoke({
+        "task": "define metric ENGAGEMENT_RATE v1",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    r2 = await medha.ainvoke({
+        "task": "redefine metric ENGAGEMENT_RATE v2",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert r1.get("version") == "1.0.0"
+    assert r2.get("version") == "2.0.0"  # new version, not overwrite
+
+@pytest.mark.asyncio
+async def test_4_tenant_isolation():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "collect data for metric M-001 from CLIENT-OTHER-02",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("refused") is True
+    assert "tenant" in result.get("error", "").lower()
+
+@pytest.mark.asyncio
+async def test_5_report_data_unavailable():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "forecast metric M-MISSING for next 4 weeks",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("forecast_value") is None
+    assert "unavailable" in result.get("error", "").lower()
+
+@pytest.mark.asyncio
+async def test_6_generate_snapshot():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "generate weekly analytics snapshot",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("snapshot_id")
+    assert result.get("metrics")
+
+@pytest.mark.asyncio
+async def test_7_data_quality_alert():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "validate data for metric M-002 (50% missing)",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("status") in ("fail", "warning")
+    assert result.get("overall_score") < 70
+
+@pytest.mark.asyncio
+async def test_8_intelligence_report():
+    medha = get_agent("SAM-AG-009")
+    result = await medha.ainvoke({
+        "task": "generate intelligence report for weekly period",
+        "tenant_id": "DEMO-HEALTHCARE-01",
+    })
+    assert result.get("report_id")
+    assert result.get("findings")
+
+@pytest.mark.asyncio
+async def test_9_model_unavailable_no_crash():
+    medha = get_agent("SAM-AG-009")
+    with patch("agents.base.llm_available", return_value=False):
+        result = await medha.ainvoke({
+            "task": "generate weekly analytics snapshot",
+            "tenant_id": "DEMO-HEALTHCARE-01",
+        })
+    assert result["status"] == "failed"
+    assert "model unavailable" in result.get("error", "").lower()
+    assert result.get("fake_output") is None
+```
+
+### 17.9 Build order for the coding agent
+
+1. Apply the shared DDL (`P0_Architecture_5.md` sec 5.4.5) + Medha's DDL above + append-only grants.
+2. Create `agents/medha_state.py` (extends shared base).
+3. Create `tools/medha_tools.py` with the tools + Pydantic schemas above.
+4. Create `models/metric_definition.py`, `data_quality.py`, `forecast.py`, `analytics_snapshot.py`, `intelligence_report.py`, `data_quality_log.py`.
+5. Create `config/agents/medha.yaml` with the authority_matrix above.
+6. Create `agents/medha.py` — LangGraph graph using the system prompt from section 10, wired to the tools.
+7. Create `tests/test_medha.py` + `tests/conftest.py` (shared fixtures).
+8. Run `pytest tests/test_medha.py -v` — all 9 must pass.
+9. Run `seed_p1.py` to populate demo tenant, then manually invoke Medha via the API to verify the live flow.
+
+### 17.10 Out of scope (Medha does NOT do these)
 
 - Does NOT make business decisions (recommendations only — executives decide)
 - Does NOT approve agent certifications (Satya's job)
