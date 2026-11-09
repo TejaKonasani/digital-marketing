@@ -1,8 +1,9 @@
-# Website Design — Samrudhi P0 Control Centre (build order #6)
+# Website Design — Samrudhi Control Centre (P0 + P1 Phase 1) (build order #6)
 
-> **What this document is:** The complete design specification for the P0 website — 3 screens (Dashboard, Positions, Token Usage) + 1 detail page (Agent Detail). Every screen: layout, exact elements, data source (which API endpoint / which table), and behaviour.
+> **What this document is:** The complete design specification for the website — 3 screens (Dashboard, Positions, Token Usage) + 1 detail page (Agent Detail) + workflow status view (P1 Phase 1). Every screen: layout, exact elements, data source (which API endpoint / which table), and behaviour.
 > **Read after:** `P0_Architecture_5.md` (the system this website observes and controls).
 > **The website is the Human Board's command centre** — the top layer of the 5-layer architecture (PDF1 p.9). It shows the truth and gives the human their approval gates.
+> **P1 Phase 1 additions:** workflow status panel on Dashboard, orchestrator states in Positions table, pipeline handoff events in the activity feed, workflow detail on Agent Detail pages.
 
 ---
 
@@ -77,11 +78,13 @@ Clock shows local time (the user's timezone). Search filters the Positions table
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ ROW 1 — FOUR STAT CARDS                                                 │
 │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│ │ Total        │ │ Total Agents │ │  Active      │ │  Inactive    │    │
-│ │ Departments  │ │              │ │  (working)   │ │  (not working)│   │
-│ │      11      │ │      194     │ │      2       │ │     192      │    │
-│ │ (4 live in   │ │ (4 registered│ │  ● Arjun     │ │  rest        │    │
-│ │  P0)         │ │  in P0)      │ │  ● Sutra     │ │  proposed    │    │
+│ │ Total        │ │ Total Agents │ │  Active      │ │  Workflows   │    │
+│ │ Departments  │ │              │ │  (working)   │ │  (P1 live)   │    │
+│ │      11      │ │      194     │ │      6       │ │      3       │    │
+│ │ (4 live in   │ │ (8 registered│ │  ● Arjun     │ │  ● delivery  │    │
+│ │  P0)         │ │  in P0+P1)   │ │  ● Sutra     │ │  ○ creative  │    │
+│ │              │ │              │ │  ● Daksh     │ │  ○ client    │    │
+│ │              │ │              │ │  ● Aarya     │ │  ○ analytics │    │
 │ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ROW 2 — AGENT ACTIVITY FLOW  (the "Pokee working" panel)                │
@@ -93,6 +96,10 @@ Clock shows local time (the user's timezone). Search filters the Positions table
 │ │   │ ●work  │    │ ○idle  │    │ TRAK   │    │ ○idle  │         │    │
 │ │   └───┬────┘    └────────┘    │ ○idle  │    └────────┘         │    │
 │ │       │                        └────────┘                        │    │
+│ │       │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │    │
+│ │       └─►│ DAKSH    │►│ AARYA    │►│ MITRA    │►│ MEDHA    │    │    │
+│ │          │ ○idle    │ │ ●work    │ │ ○idle    │ │ ○idle    │    │    │
+│ │          └──────────┘ └──────────┘ └──────────┘ └──────────┘    │    │
 │ │  ┌────▼─────────────────────────────────────────────────────┐   │    │
 │ │  │ 14:02:11  Arjun started ARJ-W02 Daily Executive Review   │   │    │
 │ │  │ 14:02:13  Arjun → Niyantrak: get_workforce_status ✓ (0.4s)│   │    │
@@ -132,10 +139,10 @@ Clock shows local time (the user's timezone). Search filters the Positions table
 
 | Card | Value | Data source |
 |---|---|---|
-| **Total Departments** | 11 | Static constant (the 11 departments from the master register) — but the card also shows "N live in P0" = count of departments with ≥1 active agent |
-| **Total Agents** | 194 (plan) / 4 (registered) | `GET /api/dashboard/summary` → `{total_positions: 194, registered: 4, active: 2, inactive: 2}`. Card shows both: big number = registered in P0, small text = "of 194 planned positions" |
+| **Total Departments** | 11 | Static constant (the 11 departments from the master register) — but the card also shows "N live" = count of departments with ≥1 active agent |
+| **Total Agents** | 194 (plan) / 8 (registered) | `GET /api/dashboard/summary` → `{total_positions: 194, registered: 8, active: 6, inactive: 2}`. Card shows both: big number = registered in P0+P1, small text = "of 194 planned positions" |
 | **Active Agents** | count + names | `agents` table where `status IN (active, monitored)` — "active" = **currently doing work or ready to work** (lifecycle state Active/Monitored). Card lists the names with green dots |
-| **Inactive Agents** | count | registered but not active (proposed/registered/configured/evaluated/approved/restricted/retired) + the unregistered planned positions shown as small text |
+| **Workflows** | count + status breakdown | `workflow_instances` table where `status IN (in_progress, completed)` — counts active workflows per pipeline stage (delivery, creative, client experience, analytics). Card shows live workflow states |
 
 **Definition the user asked for — "active means those agents which are doing work":**
 - **Active (green)** = lifecycle state `active` or `monitored` (passed the gate, authorised to work). If the agent has an `execution_log` row started in the last 60s with no end, the dot **pulses** (currently working).
@@ -159,6 +166,8 @@ HH:MM:SS   [Agent]   [what happened]   [duration/tokens if done]
 ```
 
 Event types shown (mapped from the bus catalogue):
+
+**P0 foundation events:**
 | Bus event | Feed line example |
 |---|---|
 | `execution.started` | `Arjun started ARJ-W02 Daily Executive Review` |
@@ -172,6 +181,18 @@ Event types shown (mapped from the bus catalogue):
 | `brief.generated` | `Arjun: Daily Executive Brief B-014 ready (link)` |
 | `approval.requested` | `Approval needed: certify Lakshya (badge on Approvals)` |
 | `model.unavailable` | `Sutra: model unavailable — reporting honestly (red)` |
+
+**P1 Phase 1 workflow events:**
+| Bus event | Feed line example |
+|---|---|
+| `workflow.created` | `Daksh created workflow WF-042 for DEMO-HEALTHCARE-01` |
+| `workflow.handoff` | `Daksh → Aarya: handoff package PKG-018 (creative brief)` |
+| `content.submitted` | `Aarya submitted content CST-009 — clinical review pending` |
+| `content.approved` | `Aarya ✓ content CST-009 approved (clinical pass)` |
+| `client.feedback.received` | `Mitra received feedback FB-031 from DEMO-HEALTHCARE-01 (positive)` |
+| `analytics.snapshot.generated` | `Medha generated analytics snapshot SNAP-012 (weekly)` |
+| `intelligence.report.generated` | `Medha: intelligence report RPT-005 ready (link)` |
+| `data_quality.alert` | `Medha raised data quality alert DQ-007 (amber)` |
 
 **The "Start an agent" control (the user's key request):**
 - Dropdown: pick an agent (Arjun / Sutra / Satya / Niyantrak)
@@ -196,10 +217,11 @@ Data: `GET /api/dashboard/priority` → `[{priority: "P0", agents: [{name, desig
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/dashboard/summary` | `{total_departments, live_departments, total_positions, registered, active: [names], inactive_count}` |
+| `GET /api/dashboard/summary` | `{total_departments, live_departments, total_positions, registered, active: [names], inactive_count, active_workflows: {count, by_stage}}` |
 | `GET /api/dashboard/activity?limit=50` | last 50 bus events (or SSE: `GET /api/dashboard/activity/stream`) |
 | `GET /api/dashboard/departments` | 11 departments with positions + live agents |
-| `GET /api/dashboard/priority` | P0/P1/P2 agent groups |
+| `GET /api/dashboard/priority` | P0/P1/P2 agent groups (P1 Phase 1 agents show live states) |
+| `GET /api/dashboard/workflows` | active workflows with pipeline stage status (P1) |
 | `POST /api/agents/{agent_id}/execute` | `{task}` → `{execution_id}` (starts the live flow) |
 | `GET /api/health` | `{ollama: bool, database: bool, redis: bool, agents: {id: state}}` |
 
@@ -218,7 +240,7 @@ Data: `GET /api/dashboard/priority` → `[{priority: "P0", agents: [{name, desig
 │ ROW 1 — THREE STAT BOXES                                                │
 │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                     │
 │ │ Total Agents │ │ Active       │ │ Inactive     │                     │
-│ │      4       │ │      2       │ │      2       │                     │
+│ │      8       │ │      6       │ │      2       │                     │
 │ │ registered   │ │  (working /  │ │  (not yet    │                     │
 │ │ (194 planned)│ │   authorised)│ │   authorised)│                     │
 │ └──────────────┘ └──────────────┘ └──────────────┘                     │
@@ -229,12 +251,18 @@ Data: `GET /api/dashboard/priority` → `[{priority: "P0", agents: [{name, desig
 │ ├────┼──────────┼─────────────────────┼──────────────┼────────┼───────┤│
 │ │ 1  │ Sutra    │ AI CTO (TEC-001)    │ Technology   │ ●Active│ [View]││
 │ │ 2  │ Arjun    │ AI CEO (CEO-001)    │ CEO Office   │ ●Active│ [View]││
-│ │ 3  │ Satya    │ Chief Assurance     │ Independent  │ ○Eval- │ [View]││
-│ │    │          │ (GOV-001)           │ Assurance    │ uated  │       ││
-│ │ 4  │ Niyantrak│ AgentOps & DWMS     │ Technology   │ ○Conf- │ [View]││
-│ │    │          │ (TEC-007)           │              │ igured │       ││
+│ │ 3  │ Satya    │ Chief Assurance     │ Independent  │ ●Active│ [View]││
+│ │    │          │ (GOV-001)           │ Assurance    │        │       ││
+│ │ 4  │ Niyantrak│ AgentOps & DWMS     │ Technology   │ ●Active│ [View]││
+│ │    │          │ (TEC-007)           │              │        │       ││
+│ │ 5  │ Daksh    │ AI COO (OPS-001)    │ Operations   │ ●Active│ [View]││
+│ │ 6  │ Aarya    │ AI CCO (CRT-001)    │ Creative     │ ●Active│ [View]││
+│ │ 7  │ Mitra    │ AI CEXO (CEX-001)   │ Client Exp.  │ ○Regis-│ [View]││
+│ │    │          │                     │              │ tered  │       ││
+│ │ 8  │ Medha    │ AI CDAO (DAT-001)   │ Analytics    │ ○Regis-│ [View]││
+│ │    │          │                     │ & Intel.     │ tered  │       ││
 │ └────┴──────────┴─────────────────────┴──────────────┴────────┴───────┘│
-│  [filter: All ▾] [search…]        (P0 shows registered agents;          │
+│  [filter: All ▾] [search…]        (P0+P1 shows registered agents;       │
 │                                    planned positions shown on expand)   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -258,9 +286,10 @@ Data: `GET /api/dashboard/priority` → `[{priority: "P0", agents: [{name, desig
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/positions` | `{total, active: [agents], inactive: [agents], planned: [agents]}` |
+| `GET /api/positions` | `{total, active: [agents], inactive: [agents], planned: [agents]}` — includes all 8 registered agents |
 | `GET /api/positions/{agent_id}` | full agent detail (section 4 below) |
 | `GET /api/positions/{agent_id}/executions?from=&to=&limit=` | work log for a period (section 4.5) |
+| `GET /api/positions/{agent_id}/workflows?from=&to=` | workflows owned by this orchestrator (P1 Phase 1 only) |
 
 ---
 
@@ -305,7 +334,15 @@ This is the **audit page**. It is built from the agent's README (static spec) + 
 │    • Open findings (Satya): severity + status                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 6. CONNECTIONS (mini topology)                                          │
-│    This agent's links to the other P0 agents + what flows each way      │
+│    This agent's links to the other agents + what flows each way         │
+│    (P0 agents: links to other P0 agents; P1 orchestrators: pipeline     │
+│     handoffs + platform links — full table from README section 14)      │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 6B. WORKFLOWS (P1 Phase 1 orchestrators only — Daksh/Aarya/Mitra/Medha) │
+│    Active workflows owned by this orchestrator (from workflow_instances)│
+│    WF-042 · delivery · DEMO-HEALTHCARE-01 · in_progress · 3 packages    │
+│    WF-041 · delivery · DEMO-HEALTHCARE-01 · completed                   │
+│    [View workflow detail →]                                             │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 7. WORK LOG — "what did this agent do, and when"  ◄── the audit part    │
 │    [date range picker: from / to]  [filter: all/success/failed] [search]│
@@ -458,30 +495,32 @@ This is the ONLY write surface of the website. It is where the human Board exerc
 
 - [ ] `static/` served by FastAPI at `http://localhost:8000`
 - [ ] Sidebar with 3 nav items + Approvals badge + system health row (Ollama/DB/Bus dots)
-- [ ] **Dashboard** — 4 stat cards (depts, agents, active, inactive) with correct numbers from `/api/dashboard/summary`
-- [ ] **Dashboard** — topology of 4 connected agent nodes; active node pulses; connection lines animate on agent→agent messages
-- [ ] **Dashboard** — live activity feed (SSE) showing step-by-step work while an agent runs
+- [ ] **Dashboard** — 4 stat cards (depts, agents, active, workflows) with correct numbers from `/api/dashboard/summary`
+- [ ] **Dashboard** — topology of 8 connected agent nodes (4 P0 foundation + 4 P1 orchestrators); active node pulses; connection lines animate on agent→agent messages + pipeline handoffs
+- [ ] **Dashboard** — live activity feed (SSE) showing step-by-step work while an agent runs + P1 workflow events (handoffs, content, feedback, analytics)
 - [ ] **Dashboard** — "Start an agent" control (dropdown + task input + RUN) → dispatches execution → live flow visible
 - [ ] **Dashboard** — left panel: 11 departments with position counts + live agent sub-rows
-- [ ] **Dashboard** — right panel: P0 (4, live states) / P1 (24 roster) / P2 (summary) groups
-- [ ] **Positions** — 3 stat boxes (total/active/inactive)
+- [ ] **Dashboard** — right panel: P0 (4, live states) / P1 Phase 1 (4 orchestrators, live states) / P2 (summary) groups
+- [ ] **Dashboard** — workflow status panel showing active workflows by pipeline stage (P1)
+- [ ] **Positions** — 3 stat boxes (total/active/inactive) reflecting 8 registered agents
 - [ ] **Positions** — table: S.No, Name (+canonical ID), Position (+position ID), Department, Active/Inactive chip, View button
 - [ ] **Positions** — filter (state/department/priority) + search
-- [ ] **Positions** — expandable "190 planned positions" section
+- [ ] **Positions** — expandable planned positions section
 - [ ] **Agent Detail** — Identity card (static spec + live state/certification)
 - [ ] **Agent Detail** — Specifications (mission, KRAs, hard rules, permission matrix)
 - [ ] **Agent Detail** — I/O contract (receives/provides tables)
 - [ ] **Agent Detail** — Workflows (collapsible, with last-run timestamps)
 - [ ] **Agent Detail** — KPIs + latest evaluation (5-dimension scores) + open findings
-- [ ] **Agent Detail** — Connections mini-topology
+- [ ] **Agent Detail** — Connections mini-topology (P1 orchestrators show pipeline handoffs)
+- [ ] **Agent Detail** — Workflows panel for P1 orchestrators (active workflows owned)
 - [ ] **Agent Detail** — Work Log: date-range picker, project filter, status filter, expandable per-run trace, summary strip, CSV export
-- [ ] **Token Usage** — 4 stat cards with period picker
+- [ ] **Token Usage** — 4 stat cards with period picker (all 8 agents)
 - [ ] **Token Usage** — per-agent/day table + 30-day trend chart (Chart.js)
 - [ ] **Token Usage** — per-execution drill-down table + outlier flags
 - [ ] **Approvals** — pending queue with evidence links, approve/reject with note, decision history
 - [ ] **Approvals** — emergency SUSPEND button per active agent
-- [ ] Ollama-down behaviour: health dot red, LLM panels show "model unavailable", deterministic data still renders
-- [ ] All numbers on all screens match the database exactly (verified against `capacity_metrics` / `execution_log` / `agents`)
+- [ ] Ollama-down behaviour: health dot red, LLM panels show "model unavailable", deterministic data (workflow state, registry) still renders
+- [ ] All numbers on all screens match the database exactly (verified against `capacity_metrics` / `execution_log` / `agents` / `workflow_instances`)
 - [ ] Website API tests pass (`tests/test_website_api.py`)
 
 ---

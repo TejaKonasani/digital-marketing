@@ -1,13 +1,14 @@
-# P0 Architecture — The 4 Foundation Agents + Website (build order #5)
+# P0 + P1 Architecture — The Foundation Agents + Pilot Orchestrators + Website
 
-> **What this document is:** The end-to-end architecture for the P0 stage — the 4 foundation agents (Sutra, Arjun, Satya, Niyantrak), how they connect to each other, and how the website (dashboard / positions / token usage) combines with them.
-> **Read this FIRST** before implementing. The 4 agent READMEs define each agent; this document defines the SYSTEM they form together.
+> **What this document is:** The end-to-end architecture for the P0 stage (4 foundation agents: Sutra, Arjun, Satya, Niyantrak) **and** P1 Phase 1 (4 pilot orchestrators: Daksh, Aarya, Mitra, Medha) — how all 8 agents connect to each other, and how the website (dashboard / positions / token usage) combines with them.
+> **Read this FIRST** before implementing. The 8 agent READMEs define each agent; this document defines the SYSTEM they form together.
 > **Source documents:** SAMRUDHI AGENTIC AI.pdf (125p) · SAMRUDHI AGENTIC AI(1).pdf (144p) · SAMRUDHI AGENTIC AI(2).pdf (112p)
 > **Companion document:** `Website_6.md` — the full website design spec (screens, layouts, data sources).
+> **P1 Phase 1 agent READMEs:** `stage 2/phase 1/` — Daksh (#5), Aarya (#6), Mitra (#7), Medha (#8).
 
 ---
 
-## 1. WHAT P0 IS (and is not)
+## 1. WHAT P0 IS (and is not) — AND WHAT P1 PHASE 1 ADDS
 
 **P0 = the basement of the entire project.** It is the minimum secure agentic platform that makes all 194 positions possible later.
 
@@ -19,13 +20,24 @@
 | The message bus wiring the 4 agents together | Sales, marketing, finance agents (P1/P2) |
 | The activation gate (certification + human approval) | Real client data (P0 uses a demo client) |
 
+**P1 Phase 1 = the first 4 operational orchestrators built ON the P0 platform.** They consume the DWMS, message bus, activation gate, and Satya certification exactly as P0 agents do — they are not a separate system, they are the first real workloads the platform was built to run.
+
+| P1 Phase 1 IS | P1 Phase 1 IS NOT |
+|---|---|
+| 4 delivery orchestrators (Daksh OPS, Aarya CRT, Mitra CEX, Medha DAT) | The full 194-position workforce |
+| Real client workflows (delivery, creative, client experience, analytics) | Real client production data (still demo/sandbox) |
+| Pipeline connections between orchestrators (handoffs) | Cross-department sales/marketing agents (P1 Phase 2+) |
+| New bus events for workflow handoffs + workflow state store | A separate platform — same bus, same gate, same registry |
+
+**Build order:** P0 foundation (#1–4) → P1 Phase 1 orchestrators (#5–8: Daksh, Aarya, Mitra, Medha). Every P1 agent passes through the identical activation gate as P0 agents (section 4.3).
+
 **The PDF rule that shapes P0 (PDF2 p.77):** *"The P0 capabilities must exist, but they do not require sixteen independent autonomous agents. A small engineering team can initially implement them using existing infrastructure, deterministic services and a limited number of AI assistants."*
 
 → **4 LLM-powered agents + deterministic services (database, gate, telemetry, bus) = P0.**
 
 ---
 
-## 2. THE P0 SYSTEM — ONE DIAGRAM
+## 2. THE FULL SYSTEM (P0 + P1 Phase 1) — ONE DIAGRAM
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -66,29 +78,52 @@
 │  · platform + MCP gateway│     │  finding.raised (S1→board direct)       │
 │  · security + permissions│     │  incident.raised · rollback.executed    │
 │  · deployment gate (W03) │     │  brief.generated · approval.requested   │
-│  · incident response     │     └─────────────────────────────────────────┘
-└──────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  SHARED FOUNDATION (local, zero cost)                                     │
-│  PostgreSQL (all tables) · Redis (queue) · Ollama (qwen2.5:7b)           │
-│  FastAPI backend · Celery workers · structured JSON logs                  │
-└──────────────────────────────────────────────────────────────────────────┘
+│  · incident response     │     │  workflow.* (P1 handoffs)               │
+└──────────────────────────┘     └─────────────────────────────────────────┘
+       ▲                                   ▲                    ▲
+       │ shared platform                   │ workflow handoffs  │ client feedback
+       │                                   │                    │
+┌──────┴───────────────────────────────────┴────────────────────┴──────────────┐
+│  P1 PHASE 1 — OPERATIONAL ORCHESTRATORS (built ON the P0 platform)           │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │  DAKSH — AI COO    │ │  AARYA — AI CCO    │ │  MITRA — AI CEXO   │       │
+│  │  SAM-AG-002 · OPS  │ │  SAM-AG-003 · CRT  │ │  SAM-AG-004 · CEX  │       │
+│  │  delivery pipeline │ │  creative pipeline │ │  client experience │       │
+│  │  workflow_instances│ │  content_assets    │ │  client_feedback   │       │
+│  └─────────┬──────────┘ └─────────┬──────────┘ └─────────┬──────────┘       │
+│            │  deliverables         │  content             │  feedback        │
+│            ▼                       ▼                      ▼                  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  MEDHA — AI Chief Data & Intelligence  (SAM-AG-009 · DAT-001)        │  │
+│  │  analytics backbone — ingests all pipeline outputs + client data     │  │
+│  │  data_quality_logs · analytics_snapshots · intelligence_reports      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
        ▲
        │ reads (REST + live feed)
 ┌──────┴───────────────────────────────────────────────────────────────────┐
 │  WEBSITE (3 screens — see Website_6.md)                                  │
 │  ① DASHBOARD: totals · live agent activity flow · departments ·         │
-│     priority-wise agents                                                 │
-│  ② POSITIONS: counts · agent table · agent detail page (specs + logs)    │
+│     priority-wise agents · workflow status (P1)                          │
+│  ② POSITIONS: counts · 8-agent table · agent detail page (specs + logs)  │
 │  ③ TOKEN USAGE: per-agent/day tokens, trends, outliers                   │
+└──────────────────────────────────────────────────────────────────────────┘
+       ▲
+       │ shared foundation (local, zero cost)
+┌──────┴───────────────────────────────────────────────────────────────────┐
+│  SHARED FOUNDATION (local, zero cost)                                     │
+│  PostgreSQL (all tables incl. workflow/content/analytics) · Redis · Ollama│
+│  FastAPI backend · Celery workers · structured JSON logs                  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Key P1 topology:** All 4 orchestrators register/certify/activate through the SAME DWMS + gate as P0 agents. Daksh (delivery) → Aarya (creative) → Mitra (client experience) → Medha (analytics) form a client-service pipeline connected by workflow handoff events on the shared bus. Medha ingests outputs from all three for analytics. No orchestrator bypasses Satya certification or the activation gate.
+
 ---
 
-## 3. THE 4 AGENTS — RESPONSIBILITIES & BUILD ORDER
+## 3. THE 8 AGENTS — RESPONSIBILITIES & BUILD ORDER
+
+### P0 Foundation Agents (#1–4)
 
 | Build # | Agent | Canonical ID | One-line job | Why this order |
 |---|---|---|---|---|
@@ -97,23 +132,36 @@
 | 3 | **Satya** | SAM-AG-010 | Certifies & evaluates independently: C0–C5, S1–S4, 5-dimension scorecards | No agent goes Active without his gate — must exist before activations |
 | 4 | **Niyantrak** | SAM-AG-158 | Runs the DWMS: registry records, lifecycle engine, telemetry, versioning | His dashboards are most useful once 1–3 generate data |
 
-**Each agent = one LangGraph agent (Ollama LLM) + deterministic services + a YAML config + a system prompt.** Details: `Sutra_AI Chief Technology Officer_1.md`, `Arjun_AI Chief Executive Officer_2.md`, `Satya_AI Chief Assurance Agent_3.md`, `Niyantrak_AgentOps & Digital Workforce Systems_4.md`.
+### P1 Phase 1 Operational Orchestrators (#5–8)
+
+| Build # | Agent | Canonical ID | One-line job | Why this order |
+|---|---|---|---|---|
+| 5 | **Daksh** | SAM-AG-002 | Delivery orchestrator: runs client project pipelines, work packages, allocations | First real workload; delivery drives the client service loop |
+| 6 | **Aarya** | SAM-AG-003 | Creative orchestrator: healthcare content production pipeline with clinical screening | Creative feeds delivery; needs Daksh's workflow framework |
+| 7 | **Mitra** | SAM-AG-004 | Client experience orchestrator: feedback, satisfaction, escalation handling | Needs deliverables (Daksh) + content (Aarya) to manage experience |
+| 8 | **Medha** | SAM-AG-009 | Data & intelligence: analytics backbone ingesting all pipeline outputs | Last — needs data from all three pipelines to analyze |
+
+**Each agent = one LangGraph agent (Ollama LLM) + deterministic services + a YAML config + a system prompt.** Details: `stage 1/Sutra_AI Chief Technology Officer_1.md`, `stage 1/Arjun_AI Chief Executive Officer_2.md`, `stage 1/Satya_AI Chief Assurance Agent_3.md`, `stage 1/Niyantrak_AgentOps & Digital Workforce Systems_4.md`, `stage 2/phase 1/Daksh_AI Chief Operating Officer_5.md`, `stage 2/phase 1/Aarya_AI Chief Creative Officer_6.md`, `stage 2/phase 1/Mitra_AI Chief Experience Officer_7.md`, `stage 2/phase 1/Medha_AI Chief Data & Intelligence Officer_8.md`.
 
 ### The separation-of-duties matrix (who can do what)
 
-| Capability | Sutra | Arjun | Satya | Niyantrak | Human |
-|---|---|---|---|---|---|
-| Build/modify platform | ✅ | ❌ | ❌ | ❌ | approves |
-| Change agent permissions | ✅ (within policy) | requests only | ❌ | ❌ | approves material |
-| Decide business priorities | ❌ | ✅ (within authority) | ❌ | ❌ | approves material |
-| Certify an agent | ❌ | ❌ | ✅ recommends | ❌ | **confirms** |
-| Enforce activation gate | reads | ❌ | provides cert | ✅ **enforces in code** | approves |
-| Evaluate an agent | ❌ | ❌ | ✅ | ❌ | reviews |
-| Alter evaluation records | ❌ | ❌ | ❌ (append-only) | ❌ | ❌ |
-| Delete historical data | ❌ | ❌ | ❌ | ❌ | **only** |
-| Escalate S1 to Board | ✅ (tech) | ✅ (business) | ✅ **direct path** | ✅ (platform) | receives |
+| Capability | Sutra | Arjun | Satya | Niyantrak | Daksh/Aarya/Mitra/Medha | Human |
+|---|---|---|---|---|---|---|
+| Build/modify platform | ✅ | ❌ | ❌ | ❌ | ❌ | approves |
+| Change agent permissions | ✅ (within policy) | requests only | ❌ | ❌ | ❌ | approves material |
+| Decide business priorities | ❌ | ✅ (within authority) | ❌ | ❌ | ❌ | approves material |
+| Certify an agent | ❌ | ❌ | ✅ recommends | ❌ | ❌ | **confirms** |
+| Enforce activation gate | reads | ❌ | provides cert | ✅ **enforces in code** | ❌ | approves |
+| Evaluate an agent | ❌ | ❌ | ✅ | ❌ | ❌ | reviews |
+| Alter evaluation records | ❌ | ❌ | ❌ (append-only) | ❌ | ❌ | ❌ |
+| Delete historical data | ❌ | ❌ | ❌ | ❌ | ❌ | **only** |
+| Escalate S1 to Board | ✅ (tech) | ✅ (business) | ✅ **direct path** | ✅ (platform) | ✅ (via Arjun/Satya) | receives |
+| Run client delivery pipeline | ❌ | ❌ | ❌ | ❌ | ✅ **Daksh only** | approves material |
+| Produce healthcare content | ❌ | ❌ | ❌ | ❌ | ✅ **Aarya only** | approves clinical |
+| Manage client relationships | ❌ | ❌ | ❌ | ❌ | ✅ **Mitra only** | approves contracts |
+| Generate analytics reports | ❌ | ❌ | ❌ | ❌ | ✅ **Medha only** | reviews |
 
-**Key rule:** every powerful action has exactly ONE owner and at least one independent check. That is the entire P0 security model.
+**Key rule:** every powerful action has exactly ONE owner and at least one independent check. That is the entire P0 security model — extended to P1 with each orchestrator owning exactly one operational domain and no cross-authority.
 
 ---
 
@@ -138,7 +186,9 @@ All 4 agents communicate through ONE shared message bus. In P0 the bus is **Redi
 }
 ```
 
-**The P0 event catalogue (complete list — do not invent others in P0):**
+**The event catalogue (complete list — P0 foundation events + P1 Phase 1 workflow events):**
+
+### P0 foundation events (agent lifecycle, certification, platform)
 
 | Event type | Published by | Consumed by | Payload |
 |---|---|---|---|
@@ -162,7 +212,26 @@ All 4 agents communicate through ONE shared message bus. In P0 the bus is **Redi
 | `brief.generated` | Arjun | human (website), Niyantrak (stats) | brief_id, type, period |
 | `model.unavailable` | any agent | Sutra, website | agent_id, detail |
 
-### 4.2 The four connection pairs (summary — full tables in each agent README section 14)
+### P1 Phase 1 workflow events (orchestrator handoffs, pipeline state)
+
+| Event type | Published by | Consumed by | Payload |
+|---|---|---|---|
+| `workflow.created` | Daksh | Arjun, website | workflow_id, client_id, scope, priority |
+| `workflow.started` | Daksh | Niyantrak, website | workflow_id, work_packages count |
+| `work_package.completed` | Daksh | Aarya (if creative), Mitra, website | package_id, deliverable_refs, status |
+| `workflow.handoff` | Daksh → Aarya | Aarya | workflow_id, package_id, deliverable_refs, deadline |
+| `content.submitted` | Aarya | Daksh, Mitra, Satya (clinical screen) | asset_id, content_type, clinical_review_status |
+| `content.approved` | Aarya / Satya | Mitra, website | asset_id, approved_by, timestamp |
+| `content.rejected` | Aarya / Satya | Arjun, website | asset_id, reason, severity |
+| `client.feedback.received` | Mitra | Medha, Daksh, Arjun | feedback_id, client_id, sentiment, category |
+| `client.satisfaction.reported` | Mitra | Medha, Arjun, website | client_id, score, period |
+| `analytics.snapshot.generated` | Medha | Arjun, website | snapshot_id, period, metrics |
+| `intelligence.report.generated` | Medha | Arjun, human_board | report_id, findings, recommendations |
+| `data_quality.alert` | Medha | Satya, Sutra | alert_id, source, severity, detail |
+
+### 4.2 The connection pairs (summary — full tables in each agent README section 14)
+
+**P0 foundation pairs:**
 
 | Pair | What flows | Guardrail |
 |---|---|---|
@@ -172,6 +241,18 @@ All 4 agents communicate through ONE shared message bus. In P0 the bus is **Redi
 | **Satya ↔ Sutra** | test results, version history ↔ certification decisions | Sutra operates infrastructure; Satya owns criteria & decisions |
 | **Satya ↔ Niyantrak** | telemetry, registry (evidence) ↔ certifications, restrictions | Append-only both ways; Niyantrak enforces, Satya decides |
 | **Sutra ↔ Niyantrak** | platform policy, provisioning ↔ registry, telemetry, versions | One deployment gate, two readers (Sutra W03 = Niyantrak W03) |
+
+**P1 Phase 1 orchestrator pairs (all run on the P0 platform):**
+
+| Pair | What flows | Guardrail |
+|---|---|---|
+| **Arjun ↔ Daksh** | client priorities ↔ delivery status, blockers | Daksh never sets priorities; Arjun never edits work packages |
+| **Daksh → Aarya** | completed deliverables → creative production | Aarya only acts on explicit handoff events; clinical screening mandatory |
+| **Aarya → Mitra** | approved content → client experience delivery | Mitra only shows Satya-approved content; no unpublished material |
+| **Mitra → Medha** | client feedback/satisfaction → analytics ingestion | Medha read-only on feedback; cannot alter client records |
+| **Medha → Arjun** | analytics snapshots, intelligence reports ↔ strategy | Medha recommends; Arjun decides; no auto-action from reports |
+| **Satya ↔ all orchestrators** | clinical screening, safety checks ↔ content/deliverables | Satya has veto on clinical content; append-only findings |
+| **Niyantrak ↔ all orchestrators** | registry, telemetry, versioning ↔ execution logs | Every orchestrator execution logged; same activation gate |
 
 ### 4.3 The P0 end-to-end lifecycle (one agent, start to finish)
 
@@ -227,12 +308,20 @@ samrudhi-p0/
 │       ├── sutra.yaml          # model, tools, limits, authority matrix
 │       ├── arjun.yaml
 │       ├── satya.yaml
-│       └── niyantrak.yaml
+│       ├── niyantrak.yaml
+│       ├── daksh.yaml          # P1 Phase 1 — OPS-001
+│       ├── aarya.yaml          # P1 Phase 1 — CRT-001
+│       ├── mitra.yaml          # P1 Phase 1 — CEX-001
+│       └── medha.yaml          # P1 Phase 1 — DAT-001
 ├── agents/
-│   ├── sutra.py                # LangGraph agent
+│   ├── sutra.py                # LangGraph agent (P0)
 │   ├── arjun.py
 │   ├── satya.py
-│   └── niyantrak.py
+│   ├── niyantrak.py
+│   ├── daksh.py                # P1 Phase 1 delivery orchestrator
+│   ├── aarya.py                # P1 Phase 1 creative orchestrator
+│   ├── mitra.py                # P1 Phase 1 client experience orchestrator
+│   └── medha.py                # P1 Phase 1 data & intelligence orchestrator
 ├── dwms/                       # Niyantrak's deterministic services
 │   ├── registry.py
 │   ├── lifecycle.py            # 8-state engine + 5-check gate
@@ -243,11 +332,20 @@ samrudhi-p0/
 │   ├── sutra_tools.py
 │   ├── arjun_tools.py
 │   ├── satya_tools.py
-│   └── niyantrak_tools.py
+│   ├── niyantrak_tools.py
+│   ├── daksh_tools.py          # work package, allocation tools
+│   ├── aarya_tools.py          # content generation, clinical screening tools
+│   ├── mitra_tools.py          # feedback, satisfaction tools
+│   └── medha_tools.py          # analytics, snapshot tools
 ├── frameworks/                 # Satya's deterministic frameworks
 │   ├── competency.py           # C0–C5
 │   ├── severity.py             # S1–S4
-│   └── scorecard.py            # 5-dimension + hard stops
+│   ├── scorecard.py            # 5-dimension + hard stops
+│   └── clinical_screening.py   # healthcare content rules (P1)
+├── pipeline/                   # P1 Phase 1 workflow orchestration
+│   ├── workflow_state.py       # workflow_instances, work_packages state machine
+│   ├── handoffs.py             # Daksh→Aarya→Mitra→Medha handoff logic
+│   └── content_pipeline.py     # Aarya creative pipeline with clinical gate
 ├── models/                     # SQLAlchemy models (all shared tables)
 │   ├── agent_registry.py
 │   ├── agent_version.py
@@ -266,19 +364,35 @@ samrudhi-p0/
 │   ├── action.py
 │   ├── brief.py
 │   ├── approval.py
-│   └── bus_event.py
+│   ├── bus_event.py
+│   ├── workflow_instance.py    # P1 — client workflows
+│   ├── work_package.py         # P1 — deliverable packages
+│   ├── allocation.py           # P1 — resource allocations
+│   ├── content_asset.py        # P1 — content production records
+│   ├── clinical_review_flag.py # P1 — clinical screening results
+│   ├── publishing_record.py    # P1 — content publish history
+│   ├── client_feedback.py      # P1 — client experience feedback
+│   ├── client_satisfaction.py  # P1 — satisfaction scores
+│   ├── data_quality_log.py     # P1 — Medha data quality alerts
+│   ├── analytics_snapshot.py   # P1 — analytics snapshots
+│   └── intelligence_report.py  # P1 — intelligence reports
 ├── workflows/                  # the named workflows
 │   ├── sutra_w01_review.py ... sutra_w04_incident.py
 │   ├── arj_w01_objective.py ... arj_w04_escalation.py
 │   ├── sat_w01_certification.py ... sat_w04_incident.py
-│   └── nya_w01_register.py ... nya_w05_versioning.py
+│   ├── nya_w01_register.py ... nya_w05_versioning.py
+│   ├── dks_w01_workflow.py ... dks_w03_allocation.py   # P1 Daksh
+│   ├── aar_w01_content.py ... aar_w03_screening.py     # P1 Aarya
+│   ├── mit_w01_feedback.py ... mit_w03_satisfaction.py # P1 Mitra
+│   └── mdh_w01_snapshot.py ... mdh_w03_intelligence.py # P1 Medha
 ├── bus/
 │   └── messages.py             # event catalogue + publish/subscribe
 ├── api/
 │   ├── routes_dashboard.py     # feeds the Dashboard screen
 │   ├── routes_positions.py     # feeds the Positions screen + agent detail
 │   ├── routes_tokens.py        # feeds the Token Usage screen
-│   └── routes_approvals.py     # human approval panel
+│   ├── routes_approvals.py     # human approval panel
+│   └── routes_workflows.py     # P1 workflow status + pipeline state
 ├── static/                     # the website (see Website_6.md)
 │   ├── index.html              # Dashboard
 │   ├── positions.html
@@ -290,12 +404,18 @@ samrudhi-p0/
     ├── test_arjun.py           # 9 scenarios (Arjun README 13.3)
     ├── test_satya.py           # 9 scenarios + known-failure sample
     ├── test_niyantrak.py       # 9 scenarios + gate unit tests
+    ├── test_daksh.py           # P1 delivery pipeline scenarios
+    ├── test_aarya.py           # P1 creative pipeline + clinical screening
+    ├── test_mitra.py           # P1 client experience scenarios
+    ├── test_medha.py           # P1 analytics scenarios
     ├── test_bus.py             # event flow integration
     ├── test_website_api.py     # every screen's data endpoint
     └── test_e2e_lifecycle.py   # the 12-step lifecycle (section 4.3)
 ```
 
-### 5.2 Database — the complete P0 table list
+### 5.2 Database — the complete table list (P0 + P1 Phase 1)
+
+**P0 foundation tables:**
 
 | Table | Owner | Purpose | Mutability |
 |---|---|---|---|
@@ -318,7 +438,25 @@ samrudhi-p0/
 | `approvals` | Human (via website) | every human approval/decision | append-only |
 | `bus_events` | bus | durable log of every bus event | append-only |
 
-**Append-only enforcement:** for append-only tables, the application role has INSERT + SELECT grants only. No UPDATE/DELETE. (The 3 tables with status fields are the exception, documented above.)
+**P1 Phase 1 workflow state store tables:**
+
+| Table | Owner | Purpose | Mutability |
+|---|---|---|---|
+| `workflow_instances` | Daksh | client workflow records (id, client, scope, status, priority) | updates allowed (status) |
+| `work_packages` | Daksh | deliverable packages within a workflow | updates allowed (status) |
+| `allocations` | Daksh | resource/time allocations per package | updates allowed (status) |
+| `content_assets` | Aarya | content production records (id, type, status, version) | updates allowed (status) |
+| `clinical_review_flags` | Aarya / Satya | healthcare content clinical screening results | append-only |
+| `publishing_records` | Aarya / Mitra | content publish history (what, when, where) | append-only |
+| `client_feedback` | Mitra | client feedback records (sentiment, category, detail) | append-only |
+| `client_satisfaction` | Mitra | periodic satisfaction scores per client | append-only (periodic rows) |
+| `data_quality_logs` | Medha | data quality alerts and validation results | append-only |
+| `analytics_snapshots` | Medha | periodic analytics snapshots (metrics, period) | append-only |
+| `intelligence_reports` | Medha | intelligence reports with findings/recommendations | append-only |
+
+**Append-only enforcement:** for append-only tables, the application role has INSERT + SELECT grants only. No UPDATE/DELETE. (Tables with status fields are the exception, documented above.)
+
+**Workflow state store (P1):** the `workflow_instances` + `work_packages` + `allocations` tables form the deterministic workflow state store. Every workflow has a state machine (created → started → in_progress → handoff → completed / blocked) enforced in code (`pipeline/workflow_state.py`). Orchestrator handoffs (`workflow.handoff`, `content.submitted`, `client.feedback.received` events) update state atomically and log to `bus_events` + `execution_log`.
 
 ### 5.3 Tech stack (fixed — local, zero cost)
 
