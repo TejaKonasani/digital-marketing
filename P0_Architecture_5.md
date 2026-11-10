@@ -1,23 +1,29 @@
-# P0 + P1 Architecture — The Foundation Agents + Pilot Orchestrators + Website
+# Samrudhi Agentic OS — Full Architecture (P0 + P1 Phases 1–4 + Website)
 
-> **What this document is:** The end-to-end architecture for the P0 stage (4 foundation agents: Sutra, Arjun, Satya, Niyantrak) **and** P1 Phase 1 (4 pilot orchestrators: Daksh, Aarya, Mitra, Medha) — how all 8 agents connect to each other, and how the website (dashboard / positions / token usage) combines with them.
-> **Read this FIRST** before implementing. The 8 agent READMEs define each agent; this document defines the SYSTEM they form together.
-> **Source documents:** SAMRUDHI AGENTIC AI.pdf (125p) · SAMRUDHI AGENTIC AI(1).pdf (144p) · SAMRUDHI AGENTIC AI(2).pdf (112p)
+> **What this document is:** The end-to-end architecture for the entire Samrudhi digital workforce — P0 foundation (4 agents), P1 Phase 1 (4 orchestrators), P1 Phase 2 (16 content-pipeline agents), P1 Phase 3 (9 sales-pod agents), and P1 Phase 4 (finance pod). It defines how ALL agents connect to each other via the shared platform, and how the website (dashboard / positions / token usage) combines with them.
+> **Read this FIRST** before implementing. Each agent README defines its agent; this document defines the SYSTEM they form together.
+> **Source documents:** SAMRUDHI AGENTIC AI.pdf (125p) · SAMRUDHI AGENTIC AI(1).pdf (144p) · SAMRUDHI AGENTIC AI(2).pdf (112p) — all canonical IDs (SAM-AG-xxx) and position IDs (e.g. CRT-001) come from these PDFs.
 > **Companion document:** `Website_6.md` — the full website design spec (screens, layouts, data sources).
-> **P1 Phase 1 agent READMEs:** `stage 2/phase 1/` — Daksh (#5), Aarya (#6), Mitra (#7), Medha (#8).
+> **Agent READMEs by phase:**
+> - P0 foundation: `stage 1/` — Sutra (#1), Arjun (#2), Satya (#3), Niyantrak (#4)
+> - P1 Phase 1: `stage 2/phase 1/` — Daksh (#5), Aarya (#6), Mitra (#7), Medha (#8)
+> - P1 Phase 2: `stage 2/phase 2/` — content pipeline (#9–24)
+> - P1 Phase 3: `stage 2/phase 3/` — sales pod (#25–33)
+> - P1 Phase 4: `stage 2/phase 4/` — finance pod (roster pending)
+> **Master reference:** All canonical IDs, position IDs, departments, and responsibilities are consolidated in the PDFs (Department Master Registers + Canonical Registry Reconciliation).
 
 ---
 
-## 1. WHAT P0 IS (and is not) — AND WHAT P1 PHASE 1 ADDS
+## 1. WHAT P0 IS (and is not) — AND WHAT EACH P1 PHASE ADDS
 
 **P0 = the basement of the entire project.** It is the minimum secure agentic platform that makes all 194 positions possible later.
 
 | P0 IS | P0 IS NOT |
 |---|---|
 | 4 thinking agents (Sutra, Arjun, Satya, Niyantrak) | 194 running models |
-| The DWMS (registry, lifecycle, telemetry, versioning) | A content-production pipeline (that's P1) |
-| The website (Dashboard, Positions, Token Usage) | A client-facing portal (that's P1) |
-| The message bus wiring the 4 agents together | Sales, marketing, finance agents (P1/P2) |
+| The DWMS (registry, lifecycle, telemetry, versioning) | A content-production pipeline (that's P1 Phase 2) |
+| The website (Dashboard, Positions, Token Usage) | A client-facing portal (that's P1 Phase 1 Mitra) |
+| The message bus wiring the 4 agents together | Sales, marketing, finance agents (P1 Phase 3–4) |
 | The activation gate (certification + human approval) | Real client data (P0 uses a demo client) |
 
 **P1 Phase 1 = the first 4 operational orchestrators built ON the P0 platform.** They consume the DWMS, message bus, activation gate, and Satya certification exactly as P0 agents do — they are not a separate system, they are the first real workloads the platform was built to run.
@@ -26,10 +32,16 @@
 |---|---|
 | 4 delivery orchestrators (Daksh OPS, Aarya CRT, Mitra CEX, Medha DAT) | The full 194-position workforce |
 | Real client workflows (delivery, creative, client experience, analytics) | Real client production data (still demo/sandbox) |
-| Pipeline connections between orchestrators (handoffs) | Cross-department sales/marketing agents (P1 Phase 2+) |
+| Pipeline connections between orchestrators (handoffs) | Specialist content-pipeline agents (P1 Phase 2) |
 | New bus events for workflow handoffs + workflow state store | A separate platform — same bus, same gate, same registry |
 
-**Build order:** P0 foundation (#1–4) → P1 Phase 1 orchestrators (#5–8: Daksh, Aarya, Mitra, Medha). Every P1 agent passes through the identical activation gate as P0 agents (section 4.3).
+**P1 Phase 2 = the content production pipeline (16 agents, image #9–24).** Built ON the P0 platform + Phase 1 orchestrators. These are the specialist agents that actually produce healthcare content: brief intake, strategy, research, copywriting, creative production, QA/clinical screening, publishing, analytics, costing, reporting, calendar, direction, compliance, workflow coordination. They register/certify/activate through the SAME DWMS + gate as P0 agents.
+
+**P1 Phase 3 = the sales pod (9 agents, image #25–33).** Revenue strategy, pipeline management, prospect research, lead qualification, outbound, appointments, proposals, nurturing, onboarding handover. Same platform, same gate.
+
+**P1 Phase 4 = the finance pod (14 agents).** Billing, collections, accounting, budgeting, costing, procurement, compliance, reporting. Same platform, same gate.
+
+**Build order:** P0 foundation (#1–4) → P1 Phase 1 orchestrators (#5–8: Daksh, Aarya, Mitra, Medha) → P1 Phase 2 content pipeline (#9–24) → P1 Phase 3 sales pod (#25–33) → P1 Phase 4 finance pod. Every agent passes through the identical activation gate as P0 agents (section 4.3).
 
 **The PDF rule that shapes P0 (PDF2 p.77):** *"The P0 capabilities must exist, but they do not require sixteen independent autonomous agents. A small engineering team can initially implement them using existing infrastructure, deterministic services and a limited number of AI assistants."*
 
@@ -37,7 +49,7 @@
 
 ---
 
-## 2. THE FULL SYSTEM (P0 + P1 Phase 1) — ONE DIAGRAM
+## 2. THE FULL SYSTEM (P0 + P1 Phases 1–4) — ONE DIAGRAM
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -99,13 +111,59 @@
 │  │  data_quality_logs · analytics_snapshots · intelligence_reports      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
+       ▲                                   ▲                    ▲
+       │ orchestrates specialist agents    │                    │
+       ▼                                   ▼                    ▼
+┌──────┴──────────────────────────────────────────────────────────────────────┐
+│  P1 PHASE 2 — CONTENT PRODUCTION PIPELINE (16 agents, image #9–24)          │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Shruti SAM-039     │ │ Yojana SAM-059     │ │ Anvesh SAM-081     │       │
+│  │ Client Context     │ │ Delivery Planning  │ │ Healthcare Research│       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Lekha SAM-082      │ │ Chitra SAM-083     │ │ Shuddhi SAM-080    │       │
+│  │ Copywriting        │ │ Creative Production│ │ Clinical Screening │       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Gunvatta SAM-177   │ │ Prakash SAM-084    │ │ Prativedan SAM-125 │       │
+│  │ Creative Brief     │ │ Publishing         │ │ Social Analytics   │       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Lagaat SAM-146     │ │ Lakshya SAM-012    │ │ Kalpana SAM-077    │       │
+│  │ Costing/Efficiency │ │ Client Reporting   │ │ Content Calendar   │       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Disha SAM-076      │ │ Nirikshak SAM-166  │ │ Pravahika SAM-162  │       │
+│  │ Content Direction  │ │ Compliance Monitor │ │ Workflow Coord.    │       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐                                                       │
+│  │ Swasthya SAM-180   │   Healthcare Compliance                               │
+│  └────────────────────┘                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+       ▲                                   ▲                    ▲
+       │                                   │                    │
+┌──────┴───────────────────────────────────┴────────────────────┴──────────────┐
+│  P1 PHASE 3 — SALES POD (9 agents, image #25–33)                            │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Vikram SAM-005     │ │ Aarav SAM-016      │ │ Khoj SAM-018       │       │
+│  │ AI CGO             │ │ Sales Ops          │ │ Prospect Research  │       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Lakshit SAM-019    │ │ Sampark SAM-020    │ │ Amantran SAM-021   │       │
+│  │ Lead Qualification │ │ Outbound Prospecting│ │ Meeting Coord.    │       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐       │
+│  │ Prastav SAM-022    │ │ Anugrah SAM-023    │ │ Setu SAM-024       │       │
+│  │ Solution Design    │ │ Follow-up/Nurturing│ │ Onboarding Handover│       │
+│  └────────────────────┘ └────────────────────┘ └────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────────────┘
        ▲
        │ reads (REST + live feed)
 ┌──────┴───────────────────────────────────────────────────────────────────┐
 │  WEBSITE (3 screens — see Website_6.md)                                  │
 │  ① DASHBOARD: totals · live agent activity flow · departments ·         │
-│     priority-wise agents · workflow status (P1)                          │
-│  ② POSITIONS: counts · 8-agent table · agent detail page (specs + logs)  │
+│     priority-wise agents · workflow status (all phases)                  │
+│  ② POSITIONS: counts · all-phase agent table · agent detail page         │
 │  ③ TOKEN USAGE: per-agent/day tokens, trends, outliers                   │
 └──────────────────────────────────────────────────────────────────────────┘
        ▲
@@ -121,27 +179,64 @@
 
 ---
 
-## 3. THE 8 AGENTS — RESPONSIBILITIES & BUILD ORDER
+## 3. ALL AGENTS — RESPONSIBILITIES & BUILD ORDER
 
 ### P0 Foundation Agents (#1–4)
 
-| Build # | Agent | Canonical ID | One-line job | Why this order |
-|---|---|---|---|---|
-| 1 | **Sutra** | SAM-AG-007 | Builds & runs the platform: registry tables, MCP gateway, security, deployment gate, incident response | Nothing runs without the platform |
-| 2 | **Arjun** | SAM-AG-001 | Coordinates the enterprise: registers, briefs, escalations, decision routing | The coordination hub the other agents connect through |
-| 3 | **Satya** | SAM-AG-010 | Certifies & evaluates independently: C0–C5, S1–S4, 5-dimension scorecards | No agent goes Active without his gate — must exist before activations |
-| 4 | **Niyantrak** | SAM-AG-158 | Runs the DWMS: registry records, lifecycle engine, telemetry, versioning | His dashboards are most useful once 1–3 generate data |
+| Build # | Agent | Canonical ID | Position ID | Department | One-line job | Why this order |
+|---|---|---|---|---|---|---|
+| 1 | **Sutra** | SAM-AG-007 | TEC-001 | Technology & AgentOps | Builds & runs the platform: registry tables, MCP gateway, security, deployment gate, incident response | Nothing runs without the platform |
+| 2 | **Arjun** | SAM-AG-001 | CEO-001 | CEO Office | Coordinates the enterprise: registers, briefs, escalations, decision routing | The coordination hub the other agents connect through |
+| 3 | **Satya** | SAM-AG-010 | GOV-001 | Assurance & Governance | Certifies & evaluates independently: C0–C5, S1–S4, 5-dimension scorecards | No agent goes Active without his gate — must exist before activations |
+| 4 | **Niyantrak** | SAM-AG-158 | TEC-007 | Technology & AgentOps | Runs the DWMS: registry records, lifecycle engine, telemetry, versioning | His dashboards are most useful once 1–3 generate data |
 
 ### P1 Phase 1 Operational Orchestrators (#5–8)
 
-| Build # | Agent | Canonical ID | One-line job | Why this order |
-|---|---|---|---|---|
-| 5 | **Daksh** | SAM-AG-002 | Delivery orchestrator: runs client project pipelines, work packages, allocations | First real workload; delivery drives the client service loop |
-| 6 | **Aarya** | SAM-AG-003 | Creative orchestrator: healthcare content production pipeline with clinical screening | Creative feeds delivery; needs Daksh's workflow framework |
-| 7 | **Mitra** | SAM-AG-004 | Client experience orchestrator: feedback, satisfaction, escalation handling | Needs deliverables (Daksh) + content (Aarya) to manage experience |
-| 8 | **Medha** | SAM-AG-009 | Data & intelligence: analytics backbone ingesting all pipeline outputs | Last — needs data from all three pipelines to analyze |
+| Build # | Agent | Canonical ID | Position ID | Department | One-line job | Why this order |
+|---|---|---|---|---|---|---|
+| 5 | **Daksh** | SAM-AG-002 | OPS-001 | Operations | Delivery orchestrator: runs client project pipelines, work packages, allocations | First real workload; delivery drives the client service loop |
+| 6 | **Aarya** | SAM-AG-003 | CRT-001 | Creative & Content | Creative orchestrator: healthcare content production pipeline with clinical screening | Creative feeds delivery; needs Daksh's workflow framework |
+| 7 | **Mitra** | SAM-AG-004 | CEX-001 | Client Experience | Client experience orchestrator: feedback, satisfaction, escalation handling | Needs deliverables (Daksh) + content (Aarya) to manage experience |
+| 8 | **Medha** | SAM-AG-009 | DAT-001 | Analytics & Intelligence | Data & intelligence: analytics backbone ingesting all pipeline outputs | Last — needs data from all three pipelines to analyze |
 
-**Each agent = one LangGraph agent (Ollama LLM) + deterministic services + a YAML config + a system prompt.** Details: `stage 1/Sutra_AI Chief Technology Officer_1.md`, `stage 1/Arjun_AI Chief Executive Officer_2.md`, `stage 1/Satya_AI Chief Assurance Agent_3.md`, `stage 1/Niyantrak_AgentOps & Digital Workforce Systems_4.md`, `stage 2/phase 1/Daksh_AI Chief Operating Officer_5.md`, `stage 2/phase 1/Aarya_AI Chief Creative Officer_6.md`, `stage 2/phase 1/Mitra_AI Chief Experience Officer_7.md`, `stage 2/phase 1/Medha_AI Chief Data & Intelligence Officer_8.md`.
+### P1 Phase 2 — Content Production Pipeline (#9–24)
+
+These agents are orchestrated BY Daksh/Aarya/Mitra but run as specialist workers on the same platform. Each registers/certifies/activates through the SAME DWMS + gate.
+
+| Image # | Agent | Canonical ID | Position ID | Department | One-line job |
+|---|---|---|---|---|---|
+| 9 | **Shruti** | SAM-AG-039 | CEX-008 | Client Experience | Client context: read approved briefs, brand guidelines, content restrictions |
+| 10 | **Yojana** | SAM-AG-059 | OPS-002 | Operations | Delivery planning: propose content pillars, audiences, messages, objectives |
+| 11 | **Anvesh** | SAM-AG-081 | CRT-007 | Creative & Content | Healthcare research: source-backed topic + market research, verify facts |
+| 12 | **Lekha** | SAM-AG-082 | CRT-008 | Creative & Content | Copywriting: social copy, captions, scripts, headlines, CTAs |
+| 13 | **Chitra** | SAM-AG-083 | CRT-009 | Creative & Content | Creative production: template-based artwork, design execution, assets |
+| 14 | **Shuddhi** | SAM-AG-080 | CRT-006 | Creative & Content | Content QA / clinical screening: factual, language, brand + clinical checks |
+| 15 | **Gunvatta** | SAM-AG-177 | GOV-009 | Assurance & Governance | Creative brief: design instructions, creative specifications, brief handoff |
+| 16 | **Prakash** | SAM-AG-084 | CRT-010 | Creative & Content | Publishing: schedule + publish authorised content, record publication status |
+| 17 | **Prativedan** | SAM-AG-125 | DAT-011 | Analytics & Intelligence | Social analytics: collect + interpret platform performance, engagement metrics |
+| 18 | **Lagaat** | SAM-AG-146 | FIN-014 | Finance & Administration | Costing / efficiency: production cost tracking, workflow efficiency, bottlenecks |
+| 19 | **Lakshya** | SAM-AG-012 | CEO-003 | CEO Office | Client reporting: performance reports + recommendations to client |
+| 20 | **Kalpana** | SAM-AG-077 | CRT-003 | Creative & Content | Content calendar: monthly + weekly editorial calendars, platform/format/deadline |
+| 21 | **Disha** | SAM-AG-076 | CRT-002 | Creative & Content | Content direction: creative direction, tone consistency, brand voice guidance |
+| 22 | **Nirikshak** | SAM-AG-166 | TEC-015 | Technology & AgentOps | Compliance monitor: policy, security, audit monitoring; regulatory checks |
+| 23 | **Pravahika** | SAM-AG-162 | TEC-011 | Technology & AgentOps | Workflow coordination: multi-agent workflow coordination, task state/retries/timeouts |
+| 24 | **Swasthya** | SAM-AG-180 | GOV-012 | Assurance & Governance | Healthcare compliance: clinical claims validation, patient-safety guardrails |
+
+### P1 Phase 3 — Sales Pod (#25–33)
+
+| Image # | Agent | Canonical ID | Position ID | Department | One-line job |
+|---|---|---|---|---|---|
+| 25 | **Vikram** | SAM-AG-005 | SAL-001 | Sales & Business Development | AI CGO: revenue strategy, sales targets, executive coordination, pipeline management |
+| 26 | **Aarav** | SAM-AG-016 | SAL-002 | Sales & Business Development | Sales operations & pipeline lead: CRM hygiene, task assignment, process compliance, SLA tracking |
+| 27 | **Khoj** | SAM-AG-018 | SAL-004 | Sales & Business Development | Prospect research & market intelligence: identify healthcare orgs + decision-makers, segmentation |
+| 28 | **Lakshit** | SAM-AG-019 | SAL-005 | Sales & Business Development | Lead qualification & scoring: evaluate lead fit, intent, urgency, buying readiness (ICP scoring) |
+| 29 | **Sampark** | SAM-AG-020 | SAL-006 | Sales & Business Development | Outbound pros
+
+### P1 Phase 4 — Finance Pod (roster pending)
+
+Reserved for the finance pod agents (#34–47). Roster details to be extracted from PDF2 Dept 09 register when provided.
+
+---
 
 ### The separation-of-duties matrix (who can do what)
 
@@ -312,7 +407,34 @@ samrudhi-p0/
 │       ├── daksh.yaml          # P1 Phase 1 — OPS-001
 │       ├── aarya.yaml          # P1 Phase 1 — CRT-001
 │       ├── mitra.yaml          # P1 Phase 1 — CEX-001
-│       └── medha.yaml          # P1 Phase 1 — DAT-001
+│       ├── medha.yaml          # P1 Phase 1 — DAT-001
+│       ├── phase2/             # P1 Phase 2 content pipeline (#9–24)
+│       │   ├── shruti.yaml     # CEX-008 · SAM-AG-039
+│       │   ├── yojana.yaml     # OPS-002 · SAM-AG-059
+│       │   ├── anvesh.yaml     # CRT-007 · SAM-AG-081
+│       │   ├── lekha.yaml      # CRT-008 · SAM-AG-082
+│       │   ├── chitra.yaml     # CRT-009 · SAM-AG-083
+│       │   ├── shuddhi.yaml    # CRT-006 · SAM-AG-080
+│       │   ├── gunvatta.yaml   # GOV-009 · SAM-AG-177
+│       │   ├── prakash.yaml    # CRT-010 · SAM-AG-084
+│       │   ├── prativedan.yaml # DAT-011 · SAM-AG-125
+│       │   ├── lagaat.yaml     # FIN-014 · SAM-AG-146
+│       │   ├── lakshya.yaml    # CEO-003 · SAM-AG-012
+│       │   ├── kalpana.yaml    # CRT-003 · SAM-AG-077
+│       │   ├── disha.yaml      # CRT-002 · SAM-AG-076
+│       │   ├── nirikshak.yaml  # TEC-015 · SAM-AG-166
+│       │   ├── pravahika.yaml  # TEC-011 · SAM-AG-162
+│       │   └── swasthya.yaml   # GOV-012 · SAM-AG-180
+│       └── phase3/             # P1 Phase 3 sales pod (#25–33)
+│           ├── vikram.yaml     # SAL-001 · SAM-AG-005
+│           ├── aarav.yaml      # SAL-002 · SAM-AG-016
+│           ├── khoj.yaml       # SAL-004 · SAM-AG-018
+│           ├── lakshit.yaml    # SAL-005 · SAM-AG-019
+│           ├── sampark.yaml    # SAL-006 · SAM-AG-020
+│           ├── amantran.yaml   # SAL-007 · SAM-AG-021
+│           ├── prastav.yaml    # SAL-008 · SAM-AG-022
+│           ├── anugrah.yaml    # SAL-009 · SAM-AG-023
+│           └── setu.yaml       # SAL-010 · SAM-AG-024
 ├── agents/
 │   ├── sutra.py                # LangGraph agent (P0)
 │   ├── arjun.py
@@ -321,7 +443,15 @@ samrudhi-p0/
 │   ├── daksh.py                # P1 Phase 1 delivery orchestrator
 │   ├── aarya.py                # P1 Phase 1 creative orchestrator
 │   ├── mitra.py                # P1 Phase 1 client experience orchestrator
-│   └── medha.py                # P1 Phase 1 data & intelligence orchestrator
+│   ├── medha.py                # P1 Phase 1 data & intelligence orchestrator
+│   ├── phase2/                 # P1 Phase 2 content pipeline specialist agents (#9–24)
+│   │   ├── shruti.py, yojana.py, anvesh.py, lekha.py, chitra.py
+│   │   ├── shuddhi.py, gunvatta.py, prakash.py, prativedan.py, lagaat.py
+│   │   ├── lakshya.py, kalpana.py, disha.py, nirikshak.py, pravahika.py
+│   │   └── swasthya.py
+│   └── phase3/                 # P1 Phase 3 sales pod agents (#25–33)
+│       ├── vikram.py, aarav.py, khoj.py, lakshit.py, sampark.py
+│       ├── amantran.py, prastav.py, anugrah.py, setu.py
 ├── dwms/                       # Niyantrak's deterministic services
 │   ├── registry.py
 │   ├── lifecycle.py            # 8-state engine + 5-check gate
