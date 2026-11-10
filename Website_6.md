@@ -1,9 +1,9 @@
-# Website Design — Samrudhi Control Centre (P0 + P1 Phase 1) (build order #6)
+# Website Design — Samrudhi Control Centre (P0 + P1 Phases 1–4) (build order #6)
 
-> **What this document is:** The complete design specification for the website — 3 screens (Dashboard, Positions, Token Usage) + 1 detail page (Agent Detail) + workflow status view (P1 Phase 1). Every screen: layout, exact elements, data source (which API endpoint / which table), and behaviour.
+> **What this document is:** The complete design specification for the website — 3 screens (Dashboard, Positions, Token Usage) + 1 detail page (Agent Detail) + workflow status view (all phases). Every screen: layout, exact elements, data source (which API endpoint / which table), and behaviour.
 > **Read after:** `P0_Architecture_5.md` (the system this website observes and controls).
 > **The website is the Human Board's command centre** — the top layer of the 5-layer architecture (PDF1 p.9). It shows the truth and gives the human their approval gates.
-> **P1 Phase 1 additions:** workflow status panel on Dashboard, orchestrator states in Positions table, pipeline handoff events in the activity feed, workflow detail on Agent Detail pages.
+> **All phases:** workflow status panel on Dashboard, orchestrator + specialist agent states in Positions table, pipeline handoff events in the activity feed, workflow detail on Agent Detail pages. Agents span all phases: P0 foundation (#1–4), P1 Phase 1 orchestrators (#5–8), P1 Phase 2 content pipeline (#9–24), P1 Phase 3 sales pod (#25–33), P1 Phase 4 finance pod (#34–47). All agents identified by canonical SAM-AG-xxx IDs and position IDs (e.g. CRT-001).
 
 ---
 
@@ -140,7 +140,7 @@ Clock shows local time (the user's timezone). Search filters the Positions table
 | Card | Value | Data source |
 |---|---|---|
 | **Total Departments** | 11 | Static constant (the 11 departments from the master register) — but the card also shows "N live" = count of departments with ≥1 active agent |
-| **Total Agents** | 194 (plan) / 8 (registered) | `GET /api/dashboard/summary` → `{total_positions: 194, registered: 8, active: 6, inactive: 2}`. Card shows both: big number = registered in P0+P1, small text = "of 194 planned positions" |
+| **Total Agents** | 194 (plan) / registered count | `GET /api/dashboard/summary` → `{total_positions: 194, registered: N, active: M, inactive: K}`. Card shows both: big number = registered agents across all phases (P0 foundation + P1 Phase 1 orchestrators + P1 Phase 2 content pipeline + P1 Phase 3 sales pod + P1 Phase 4 finance pod), small text = "of 194 planned positions". As phases are built, registered count grows from 8 → 24 → 33 → 47+. |
 | **Active Agents** | count + names | `agents` table where `status IN (active, monitored)` — "active" = **currently doing work or ready to work** (lifecycle state Active/Monitored). Card lists the names with green dots |
 | **Workflows** | count + status breakdown | `workflow_instances` table where `status IN (in_progress, completed)` — counts active workflows per pipeline stage (delivery, creative, client experience, analytics). Card shows live workflow states |
 
@@ -250,20 +250,22 @@ Data: `GET /api/dashboard/priority` → `[{priority: "P0", agents: [{name, desig
 │ │S.No│ Name     │ Position            │ Department   │ State  │       ││
 │ ├────┼──────────┼─────────────────────┼──────────────┼────────┼───────┤│
 │ │ 1  │ Sutra    │ AI CTO (TEC-001)    │ Technology   │ ●Active│ [View]││
+│ │    │ ·SAM-007 │                     │ & AgentOps   │        │       ││
 │ │ 2  │ Arjun    │ AI CEO (CEO-001)    │ CEO Office   │ ●Active│ [View]││
-│ │ 3  │ Satya    │ Chief Assurance     │ Independent  │ ●Active│ [View]││
-│ │    │          │ (GOV-001)           │ Assurance    │        │       ││
-│ │ 4  │ Niyantrak│ AgentOps & DWMS     │ Technology   │ ●Active│ [View]││
-│ │    │          │ (TEC-007)           │              │        │       ││
+│ │    │ ·SAM-001 │                     │              │        │       ││
 │ │ 5  │ Daksh    │ AI COO (OPS-001)    │ Operations   │ ●Active│ [View]││
+│ │    │ ·SAM-002 │                     │              │        │       ││
 │ │ 6  │ Aarya    │ AI CCO (CRT-001)    │ Creative     │ ●Active│ [View]││
-│ │ 7  │ Mitra    │ AI CEXO (CEX-001)   │ Client Exp.  │ ○Regis-│ [View]││
-│ │    │          │                     │              │ tered  │       ││
-│ │ 8  │ Medha    │ AI CDAO (DAT-001)   │ Analytics    │ ○Regis-│ [View]││
-│ │    │          │                     │ & Intel.     │ tered  │       ││
+│ │    │ ·SAM-003 │                     │ & Content    │        │       ││
+│ │ 9  │ Shruti   │ Client Context      │ Client Exp.  │ ○Regis-│ [View]││
+│ │    │ ·SAM-039 │ (CEX-008)           │              │ tered  │       ││
+│ │12  │ Lekha    │ Copywriting         │ Creative     │ ○Regis-│ [View]││
+│ │    │ ·SAM-082 │ (CRT-008)           │ & Content    │ tered  │       ││
+│ │25  │ Vikram   │ AI CGO (SAL-001)    │ Sales &      │ ○Regis-│ [View]││
+│ │    │ ·SAM-005 │                     │ Development  │ tered  │       ││
 │ └────┴──────────┴─────────────────────┴──────────────┴────────┴───────┘│
-│  [filter: All ▾] [search…]        (P0+P1 shows registered agents;       │
-│                                    planned positions shown on expand)   │
+│  [filter: All ▾][Dept ▾][Phase ▾] [search…]  (shows all registered     │
+│  agents across phases; planned positions shown on expand)              │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -278,9 +280,9 @@ Data: `GET /api/dashboard/priority` → `[{priority: "P0", agents: [{name, desig
 | **Active / Inactive** | State chip: ● Active (green) / ○ Inactive (grey) with the lifecycle state in small text (proposed, registered, configured, evaluated, approved, restricted, retired) | `agents.status` |
 | **View** | Button → opens the Agent Detail page (`/positions/{agent_id}`) | — |
 
-**Filtering:** dropdown by state (All / Active / Inactive), by department, by priority. Search box matches name/ID/position.
+**Filtering:** dropdown by state (All / Active / Inactive), by department, by priority, by phase (P0 / P1 Phase 1 / P1 Phase 2 / P1 Phase 3 / P1 Phase 4). Search box matches name/canonical ID/position ID.
 
-**Planned positions (expandable):** a collapsed section "190 planned positions (P1/P2)" — expandable list of the remaining registry rows (name, position, department, priority, state=proposed) so the full 194-position plan is visible without cluttering the P0 table.
+**Planned positions (expandable):** a collapsed section "remaining planned positions" — expandable list of the remaining 194-position registry rows (name, canonical ID SAM-AG-xxx, position ID, department, phase, priority, state=proposed) so the full workforce plan is visible without cluttering the registered-agents table. Each phase shows its planned roster (Phase 2: #9–24, Phase 3: #25–33, Phase 4: #34–47, plus remaining P2 expansion positions).
 
 ### 3.3 Positions API endpoints
 
@@ -503,9 +505,9 @@ This is the ONLY write surface of the website. It is where the human Board exerc
 - [ ] **Dashboard** — right panel: P0 (4, live states) / P1 Phase 1 (4 orchestrators, live states) / P2 (summary) groups
 - [ ] **Dashboard** — workflow status panel showing active workflows by pipeline stage (P1)
 - [ ] **Positions** — 3 stat boxes (total/active/inactive) reflecting 8 registered agents
-- [ ] **Positions** — table: S.No, Name (+canonical ID), Position (+position ID), Department, Active/Inactive chip, View button
-- [ ] **Positions** — filter (state/department/priority) + search
-- [ ] **Positions** — expandable planned positions section
+- [ ] **Positions** — table: S.No, Name (+canonical ID SAM-AG-xxx), Position (+position ID), Department, Phase, Active/Inactive chip, View button
+- [ ] **Positions** — filter (state/department/priority/phase) + search (name/ID/position)
+- [ ] **Positions** — expandable planned positions section showing all phases (#9–24 Phase 2, #25–33 Phase 3, #34–47 Phase 4, remaining P2)
 - [ ] **Agent Detail** — Identity card (static spec + live state/certification)
 - [ ] **Agent Detail** — Specifications (mission, KRAs, hard rules, permission matrix)
 - [ ] **Agent Detail** — I/O contract (receives/provides tables)
