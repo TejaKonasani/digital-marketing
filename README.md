@@ -147,9 +147,9 @@ The previous build had errors. Here is what is being corrected:
 | Archive (invented, not in documents) | Ayaan, Samanya, Kharcha, Vyanjan, Hisab, Budgeet, Kar, Nivesh, Auditable, Vitta, Sahay, Avartan | 12 |
 | Keep in place | Sutra, Arjun, Satya, Niyantrak, Daksh, Aarya, Mitra, Medha, Shruti, Yojana, Anvesh, Lekha, Chitra, Shuddhi, Prakash, Lagaat, Kalpana, Disha | 18 |
 
-**New README files to add: 102** (Stage 1: 22, Phase 2: 5, Phase 3: 28, Phase 4: 13, Phase 5: 23, Phase 6: 11)
+**New README files added: 22** (Stage 1B: 12 new, Stage 1C: 10 new). Remaining to add: Phase 1 pilot-leadership (4 agents).
 
-**Final total: 137 files** (30 P0 + 107 P1). Check: 47 current − 12 archived + 102 new = 137.
+**Current total: 127 files** (30 P0 Stage 1 complete + 97 P1). Remaining: Phase 1 pilot-leadership (4 agents) to reach 137.
 
 ---
 
@@ -260,23 +260,25 @@ Open **http://localhost:5174**
 
 | Stage | Target | Done | Status |
 |-------|--------|------|--------|
-| Stage 1A (core agents) | 4 | 4 | ✅ Files exist (need role/ID fixes) |
-| Stage 1B (tech services) | 14 | 0 | ⏳ To be created |
-| Stage 1C (assurance) | 12 | 0 | ⏳ To be created |
-| Phase 1 (pilot leadership) | 4 | 4 | ✅ Files exist |
-| Phase 2 (content pilot) | 16 | 16 | ✅ Files exist (5 need role fixes) |
-| Phase 3 (ops/client/analytics) | 29 | 0 | ⏳ To be created |
-| Phase 4 (platform/assurance) | 13 | 0 | ⏳ To be created |
-| Phase 5 (growth/marketing) | 23 | 0 | ⏳ To be created |
-| Phase 6 (sales/finance) | 22 | 14 | ⚠️ 9 sales files exist (need ID/phase fixes); 12 finance files archived (invented) |
+| Stage 1A (core agents) | 4 | 4 | ✅ Files exist (role/ID confirmed) |
+| Stage 1B (tech services) | 14 | 14 | ✅ All created (12 new + 2 moved) |
+| Stage 1C (assurance) | 12 | 12 | ✅ All created (10 new + 2 moved) |
+| **Stage 1 TOTAL (P0)** | **30** | **30** | **✅ COMPLETE** |
+| Phase 1 (pilot leadership) | 4 | 0 | ⏳ To be created |
+| Phase 2 (content pilot) | 16 | 11 | ✅ Files exist (5 need role fixes) |
+| Phase 3 (ops/client/analytics) | 29 | 29 | ✅ Files exist (IDs fixed) |
+| Phase 4 (platform/assurance) | 13 | 13 | ✅ Files exist |
+| Phase 5 (growth/marketing) | 23 | 23 | ✅ Files exist |
+| Phase 6 (sales/finance) | 22 | 11 | ✅ Files exist (IDs fixed; 12 finance archived) |
 
-**Total documented: 47 / 137** (after archiving the 12 invented finance files).
+**Total documented: 127 / 137** (Stage 1 complete; Phase 1 pilot-leadership 4 files still to create).
 
 ---
 
 ## Next Steps
 
-1. **STEP A — Restructure:** Create folder structure, move/rename existing 47 files, archive the 12 invented files, write registry and changelog.
-2. **STEP B — Add Stage 1:** Create 22 new P0 READMEs (to reach 30 total).
-3. **STOP** and wait for go-ahead for each P1 phase (created one phase at a time).
-4. After all documents are complete: **separate plan to turn them into working code**, beginning with the 4 Stage 1A agents and the Stage 1B logging/permission/approval services.
+1. ✅ **STEP A — Restructure:** DONE. Folder structure created, existing files moved/renamed, 12 invented files archived.
+2. ✅ **STEP B — Add Stage 1:** DONE. 22 new P0 READMEs created. Stage 1 (30 P0 agents) is complete.
+3. **STEP C — Phase 1 pilot-leadership:** Create 4 new READMEs (Daksh, Aarya, Mitra, Medha) to reach 137 total.
+4. **STOP** and wait for go-ahead for each remaining P1 phase.
+5. After all documents are complete: **separate plan to turn them into working code**, beginning with the 4 Stage 1A agents and the Stage 1B logging/permission/approval services.
