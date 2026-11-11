@@ -5,6 +5,10 @@
 > **Read after:** `P0_Architecture_5.md` (the system this website observes and controls).
 >
 > **The website is the Human Board's control room** — the top layer of the system. It is **read-only except for approvals and the emergency stop**. No agent has a website login.
+>
+> **UNIFIED for all 137 agents:** This website covers BOTH Stage 1 (P0, 30 agents, COMPLETE) and Stage 2 (P1, 107 agents, being built). It is NOT split by stage — it shows ONE unified workforce. Stage 2 agents appear automatically as they are seeded and activated; no website code changes are needed. See Section 11 for the unified implementation details.
+>
+> **Build status (2026-11-11):** Stage 1 (P0) complete. Stage 2 Phase 1 (Daksh, Aarya, Mitra, Medha) is next — once built, the Workflows screen will populate.
 
 ---
 
@@ -649,4 +653,81 @@ A simple local login. One human approver account (configurable).
 | Approval gates (certification confirm, activation, S1 closure) | SAMRUDHI AGENTIC AI(1).pdf p.57, 64, 73–74 |
 | 11 departments + 137 positions + P0/P1 priorities | SAMRUDHI AGENTIC AI(1).pdf p.140–144 (canonical registry) |
 | Live activity flow | Implementation requirement (user request) — built on the bus event catalogue in `P0_Architecture_5.md` section 5 |
+
+---
+
+## 11. UNIFIED IMPLEMENTATION — STAGE 1 (P0) + STAGE 2 (P1)
+
+This website spec covers the control room for the ENTIRE Samrudhi Agentic OS — all 137 agents across Stage 1 (P0, 30 agents) and Stage 2 (P1, 107 agents). The website is NOT split by stage; it shows ONE unified workforce.
+
+### 11.1 Why the website is unified (not stage-separated)
+
+The architecture (`P0_Architecture_5.md`) is a SINGLE platform that runs all 137 agents. Stage 2 agents drop into the SAME platform without rework. Therefore the website shows ONE workforce, not two separate ones.
+
+| Website element | Stage 1 (P0) | Stage 2 (P1) | How it's shown |
+|---|---|---|---|
+| Dashboard stat cards | 30 agents registered | +107 agents registered | Total shows 137; breakdown by stage/phase |
+| Positions table | P0-1A, P0-1B, P0-1C | P1-P1 through P1-P6 | Filterable by stage/phase; paginated |
+| Department diagram | CEO Office, Technology, Assurance active | Operations, Creative, Client Exp, Analytics, etc. | All 11 departments shown; active ones pulse |
+| Token Usage | Arjun, Sutra, Satya, Niyantrak | Daksh, Aarya, Mitra, Medha, + all P1 agents | All agents in the per-agent table |
+| Approvals | P0 certification/activation | P1 certification/activation | Same queue; filterable by stage |
+| Workflows | None (P0 has no client workflows) | Daksh's workflows (P1-P1+) | Only P1 agents have workflows |
+| Findings | Satya's P0 findings | Satya's P1 findings | Same table; filterable by agent/stage |
+
+### 11.2 The dashboard shows the full workforce
+
+The Dashboard's ROW 1 stat cards and ROW 3 stage summary reflect the COMPLETE workforce:
+
+- **Registered Agents:** 137 (30 P0 + 107 P1)
+- **Active (authorised):** Starts with 4 (P0: Arjun, Sutra, Satya, Niyantrak); grows as P1 agents pass the gate
+- **Stage summary:** Shows P0 (30) and P1 (107) with phase breakdown
+
+This means the human Board sees the ENTIRE organisation plan at a glance — Stage 1 agents live, Stage 2 agents in progress, and the rest "proposed".
+
+### 11.3 The Positions screen scales to 137 agents
+
+With 137 agents, the Positions table is paginated (25 per page) and filterable:
+
+- **By stage:** P0-1A, P0-1B, P0-1C, P1-P1, P1-P2, P1-P3, P1-P4, P1-P5, P1-P6
+- **By phase:** P1-P1 (pilot leadership), P1-P2 (content), etc.
+- **By department:** CEO Office, Technology, Assurance, Operations, Creative, Client Exp, Analytics, Paid Media, Sales, Finance
+- **By state:** All / Registered / Active / Working now
+
+Each row shows the full canonical ID (`SAM-AG-007`), name, designation, position ID, stage/phase, and lifecycle state.
+
+### 11.4 The Workflows screen is P1-only (but part of the unified website)
+
+P0 agents (Arjun, Sutra, Satya, Niyantrak) do NOT have client workflows. Workflows are a P1 concept — Daksh (AI COO) creates and manages them. The Workflows screen is part of the unified website but only shows data once P1 Phase 1 (Daksh) is built.
+
+### 11.5 Building Stage 2 — what changes in the website
+
+When Stage 2 agents are built and activated, the website updates automatically (no code changes needed):
+
+| Change | When | How |
+|---|---|---|
+| Registered count goes from 30 → 137 | When P1 agents are seeded | `GET /api/dashboard/summary` returns new count |
+| Active count grows | As P1 agents pass the gate | `agents` table shows new active agents |
+| New departments pulse on diagram | As P1 department agents activate | Department nodes show active agent dots |
+| Workflows screen populates | When Daksh (P1-P1) is active | `workflow_instances` table has rows |
+| Token Usage table grows | As P1 agents execute | `execution_log` has more agent IDs |
+| Positions table shows P1 agents | When seeded | Filter by stage P1-P1..P1-P6 |
+
+**No website code changes are needed** — the website is data-driven. It reads from the database and shows whatever agents exist.
+
+### 11.6 Current build status (as of 2026-11-11)
+
+| Stage | Target | Done | Website impact |
+|---|---|---|---|
+| Stage 1A (core agents) | 4 | 4 | ✅ Dashboard shows 4 active |
+| Stage 1B (tech services) | 14 | 14 | ✅ Registered count includes all 30 P0 |
+| Stage 1C (assurance) | 12 | 12 | ✅ Assurance department active |
+| **Stage 1 TOTAL (P0)** | **30** | **30** | **✅ COMPLETE** |
+| Phase 1 (pilot leadership) | 4 | 0 | ⏳ Next — will add workflows screen data |
+| Phase 2 (content pilot) | 16 | 11 | ⏳ Files exist; will add content workflow data |
+| Phase 3 (ops/client/analytics) | 29 | 29 | ⏳ Files exist; will add client/analytics data |
+| Phase 4 (platform/assurance) | 13 | 13 | ⏳ Files exist; will extend findings/incidents |
+| Phase 5 (growth/marketing) | 23 | 23 | ⏳ Files exist; will add campaign data |
+| Phase 6 (sales/finance) | 22 | 11 | ⏳ Files exist; will add sales/finance data |
+
+**Next implementation step:** Build Phase 1 (Daksh, Aarya, Mitra, Medha). Once activated, the website's Workflows screen will populate, and the Positions table will show P1-P1 agents.
 | Tech choices (vanilla JS, local CSS, local Chart.js, SSE) | Implementation decision — zero build step, local run, offline rule |
