@@ -504,38 +504,7 @@ Vikram (SAL) ──approved scope──► DAKSH ──work packages──► Aa
 
 ---
 
-## 14. TIMELINE — When Daksh gets built
-
-From PDF1 p.116 (pilot organisation) + PDF3 p.104 (executive accountability):
-
-| Days | What happens with Daksh |
-|---|---|
-| 1–15 | Stage 1 platform live (Arjun, Sutra, Satya, Niyantrak). Daksh's requirements confirmed. |
-| 16–30 | **Daksh built**: system prompt loaded, 13 tools implemented (read-only first), 5 registers created in PostgreSQL. Gate: test scenarios 1–7 pass. |
-| 31–45 | Daksh runs in **shadow mode**: produces delivery briefs from real telemetry, human reviews every brief. Satya records first independent evaluation. |
-| 46–60 | Daksh activated for pilot scope (12-item checklist complete, human approval recorded). First live DAK-W01 cycle. |
-| 61–90 | Weekly + monthly cycles running. KPI baselines validated. First quarterly review prepared. |
-
-**Daksh — Deployment Readiness Checklist (PDF3 p.30 adapted):**
-
-- [ ] Human operations owner formally assigned
-- [ ] Role specification and authority matrix approved
-- [ ] Canonical registry record created (SAM-AG-002)
-- [ ] Required tool and data permissions configured
-- [ ] Competency tests passed for approved pilot scope
-- [ ] Critical governance and confidentiality tests passed
-- [ ] Delivery planning workflow validated
-- [ ] Incident escalation and human override tested
-- [ ] Execution logging and evaluation enabled
-- [ ] Rollback and suspension mechanisms tested
-- [ ] Independent assurance recommendation recorded (Satya)
-- [ ] Human production activation approval obtained
-
-**This is a planning checklist. Marking an item does not create certification or activate an agent.**
-
----
-
-## 15. BUILD CHECKLIST (tick as you go)
+## 14. BUILD CHECKLIST (tick as you go)
 
 - [ ] Ollama running locally with `qwen2.5:7b` pulled
 - [ ] PostgreSQL tables created: `agents`, `execution_log`, `incidents`, `workflow_instances`, `work_packages`, `allocations`, `capacity_metrics`
@@ -555,11 +524,11 @@ From PDF1 p.116 (pilot organisation) + PDF3 p.104 (executive accountability):
 
 ---
 
-## 16. BUILD INSTRUCTIONS (for the AI coding agent)
+## 15. BUILD INSTRUCTIONS (for the AI coding agent)
 
 Give this section to the coding agent. It defines exactly what to build.
 
-### 16.1 Stack (all local, zero cost)
+### 15.1 Stack (all local, zero cost)
 
 | Layer | Use |
 |---|---|
@@ -579,7 +548,7 @@ Give this section to the coding agent. It defines exactly what to build.
 - If Ollama is down, Daksh reports "model unavailable" — it does not crash and does not fake output.
 - Model name is configurable in `config/agents/daksh.yaml` (any local Ollama model works).
 
-### 16.2 Project structure (Daksh's part of the P1 monorepo)
+### 15.2 Project structure (Daksh's part of the P1 monorepo)
 
 ```
 samrudhi-p1/
@@ -605,7 +574,7 @@ samrudhi-p1/
 └── requirements.txt
 ```
 
-### 16.3 Daksh's database tables (P1 additions on top of P0)
+### 15.3 Daksh's database tables (P1 additions on top of P0)
 
 **`workflow_instances`** (see `P0_Architecture_5.md` section 8.3 for full DDL)
 
@@ -650,15 +619,15 @@ samrudhi-p1/
 | status | ENUM | active/replaced/cancelled |
 | created_at / updated_at | TIMESTAMP | |
 
-### 16.4 Daksh's system prompt
+### 15.4 Daksh's system prompt
 
 Use the full system prompt from **section 10** verbatim.
 
-### 16.5 Test Daksh before going live
+### 15.5 Test Daksh before going live
 
 See section 12 — the pass and fail scenarios. All must pass before Satya's evaluation and human activation.
 
-### 16.6 Out of scope (Daksh does NOT do these)
+### 15.6 Out of scope (Daksh does NOT do these)
 
 - Does NOT write content, do marketing, or handle clients directly
 - Does NOT make financial decisions (recommend only)
@@ -670,7 +639,7 @@ See section 12 — the pass and fail scenarios. All must pass before Satya's eva
 
 ---
 
-## 17. SOURCE MAP
+## 16. SOURCE MAP
 
 | Section of this README | PDF file | Pages |
 |---|---|---|
